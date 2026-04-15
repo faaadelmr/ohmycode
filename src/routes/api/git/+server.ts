@@ -7,13 +7,11 @@ import fs from 'fs';
 export const GET: RequestHandler = async ({ url }) => {
 	const targetPath = url.searchParams.get('path') || process.cwd();
 
-	// Validate path exists
 	if (!fs.existsSync(targetPath)) {
 		return json({ success: false, error: 'Directory does not exist' }, { status: 400 });
 	}
 
 	try {
-		// Check if it's a git repo
 		try {
 			execSync(`git -C "${targetPath}" rev-parse --is-inside-work-tree`, { stdio: 'ignore' });
 		} catch (e) {
@@ -48,39 +46,53 @@ export const GET: RequestHandler = async ({ url }) => {
 			
 			const fullPath = path.resolve(targetPath, change.file);
 			
-			// 1. Get Functions (for TS/JS/Svelte)
-			if (fs.existsSync(fullPath) && (fullPath.endsWith('.ts') || fullPath.endsWith('.js') || fullPath.endsWith('.svelte'))) {
-				try {
-					const content = fs.readFileSync(fullPath, 'utf8');
-					const functionMatches = content.match(/function\s+(\w+)|const\s+(\w+)\s*=\s*(\(.*?\)|.*?)\s*=>/g);
-					if (functionMatches) {
-						functions = functionMatches
-							.map(m => {
-								const nameMatch = m.match(/(?:function\s+|const\s+)(\w+)/);
-								return nameMatch ? nameMatch[1] : null;
-							})
-							.filter(name => name && !['onMount', 'onDestroy', '$state', '$derived', '$props', '$effect'].includes(name)) as string[];
-					}
-				} catch (e) {}
-			}
-
-			// 2. Get Actual Diff Details
 			if (change.type !== 'Deleted') {
 				try {
-					// Get unified diff with 0 lines of context for brevity
-					// If file is untracked (status ??), we use --no-index or just read file
+					// 1. Get Actual Diff Details
 					let diffCmd = `git -C "${targetPath}" diff -U0 "${change.file}"`;
 					if (change.status === '??') {
-						// For new untracked files, we can't easily 'diff', so we just show it's new
 						diffData = 'New untracked file content...';
+						
+						// For new files, extract all functions since everything is "changed"
+						if (fs.existsSync(fullPath) && (fullPath.endsWith('.ts') || fullPath.endsWith('.js') || fullPath.endsWith('.svelte'))) {
+							const content = fs.readFileSync(fullPath, 'utf8');
+							const functionMatches = content.match(/function\s+(\w+)|const\s+(\w+)\s*=\s*(\(.*?\)|.*?)\s*=>/g);
+							if (functionMatches) {
+								functions = functionMatches
+									.map(m => {
+										const nameMatch = m.match(/(?:function\s+|const\s+)(\w+)/);
+										return nameMatch ? nameMatch[1] : null;
+									})
+									.filter(name => name && !['onMount', 'onDestroy', '$state', '$derived', '$props', '$effect'].includes(name)) as string[];
+							}
+						}
 					} else {
 						diffData = execSync(diffCmd).toString();
 						
-						// Basic stats parsing from diff
 						const lines = diffData.split('\n');
 						lines.forEach(line => {
 							if (line.startsWith('+') && !line.startsWith('+++')) diffStats.additions++;
 							if (line.startsWith('-') && !line.startsWith('---')) diffStats.deletions++;
+						});
+
+						// 2. Extract ONLY changed functions from diff hunk headers
+						// Git diff -U0 hunk headers usually look like: @@ -line,count +line,count @@ functionName()
+						const hunkHeaders = lines.filter(l => l.startsWith('@@'));
+						hunkHeaders.forEach(header => {
+							// Match common patterns in the hunk header (where git tries to show the function context)
+							const contextMatch = header.match(/@@.*@@\s+(?:.*?\s+)?(\w+)/);
+							if (contextMatch && contextMatch[1] && !/^\d+$/.test(contextMatch[1])) {
+								functions.push(contextMatch[1]);
+							}
+						});
+
+						// Also scan the added lines (+) for new function definitions
+						const addedLines = lines.filter(l => l.startsWith('+') && !l.startsWith('+++'));
+						addedLines.forEach(line => {
+							const funcMatch = line.match(/(?:function\s+|const\s+)(\w+)\s*=?\s*(?:\(|=)/);
+							if (funcMatch && funcMatch[1]) {
+								functions.push(funcMatch[1]);
+							}
 						});
 					}
 				} catch (e) {}
@@ -88,7 +100,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 			return {
 				...change,
-				functions: [...new Set(functions)].slice(0, 5),
+				functions: [...new Set(functions)].filter(f => f.length > 2).slice(0, 8),
 				diff: diffData,
 				stats: diffStats
 			};

@@ -94,21 +94,16 @@
 			filesInput = s.file;
 			functionsInput = s.functions.join(', ');
 			description = `${s.type} in ${s.file}`;
-			
-			if (s.diff && s.diff !== 'New untracked file content...') {
-				notes = `Summary of changes in ${s.file}:\n` + 
-						s.diff.split('\n')
-						 .filter(l => l.startsWith('+') || l.startsWith('-'))
-						 .slice(0, 10)
-						 .join('\n');
-			}
+			notes = `${s.file} (+${s.stats.additions} -${s.stats.deletions})`;
 		} else {
 			title = `Batch Update: ${selected.length} files`;
 			filesInput = selected.map(s => s.file).join(', ');
 			functionsInput = selected.flatMap(s => s.functions).filter((v, i, a) => a.indexOf(v) === i).join(', ');
 			description = `Working on ${selected.length} files: ${selected.map(s => s.file.split(/[/\\]/).pop()).join(', ')}`;
-			notes = "Batch changes detected:\n" + 
-					selected.map(s => `- ${s.file} (+${s.stats.additions}, -${s.stats.deletions})`).join('\n');
+			
+			// Simple list of files with stats
+			notes = "Impacted files:\n" + 
+					selected.map(s => `- ${s.file} (+${s.stats.additions} -${s.stats.deletions})`).join('\n');
 		}
 	};
 
@@ -129,7 +124,13 @@
 			.map((f) => f.trim())
 			.filter((f) => f !== '');
 
-		const newTask = kanbanStore.addTask(title, files, functions, description, notes, projectPath);
+		// Collect diffs for selected files
+		const fileDiffs: Record<string, string> = {};
+		suggestions.filter(s => s.selected).forEach(s => {
+			if (s.diff) fileDiffs[s.file] = s.diff;
+		});
+
+		const newTask = kanbanStore.addTask(title, files, functions, description, notes, projectPath, fileDiffs);
 		
 		if (projectPath) {
 			kanbanStore.syncToLocal(newTask, projectPath);

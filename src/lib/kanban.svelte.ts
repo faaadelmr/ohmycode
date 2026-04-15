@@ -7,6 +7,7 @@ export interface DutyTask {
 	notes?: string;
 	files: string[];
 	functions: string[];
+	fileDiffs?: Record<string, string>;
 	projectPath?: string;
 	createdAt: number;
 }
@@ -38,7 +39,7 @@ function createKanbanStore() {
 		get tasks() {
 			return tasks;
 		},
-		addTask(title: string, files: string[], functions: string[], description?: string, notes?: string, projectPath?: string): DutyTask {
+		addTask(title: string, files: string[], functions: string[], description?: string, notes?: string, projectPath?: string, fileDiffs?: Record<string, string>): DutyTask {
 			const newTask: DutyTask = {
 				id: crypto.randomUUID(),
 				title,
@@ -46,6 +47,7 @@ function createKanbanStore() {
 				notes,
 				files,
 				functions,
+				fileDiffs,
 				projectPath,
 				createdAt: Date.now()
 			};

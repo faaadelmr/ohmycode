@@ -485,3 +485,123 @@ Replaced the Windows-only PowerShell picker with a custom internal directory bro
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Changed Function Detection Fix
+
+**Date**: 2026-04-15
+**Task**: Changed Function Detection Fix
+
+### Summary
+
+Optimized Target Functions detection to only include functions that are actually part of the Git diff. It now parses hunk headers and added lines specifically to avoid suggesting unmodified functions.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 18: One-Click File Download from Browser
+
+**Date**: 2026-04-15
+**Task**: One-Click File Download from Browser
+
+### Summary
+
+Implemented a new API endpoint (/api/log/download) that serves backed-up source files. Made the 'Impacted Files' badges in the log cards clickable, allowing users to instantly download the specific versions of files associated with that work log entry.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 19: Per-File Toggleable Diffs in History
+
+**Date**: 2026-04-15
+**Task**: Per-File Toggleable Diffs in History
+
+### Summary
+
+Updated the data model and UI to store and display individual file diffs within the log cards. Users can now toggle a detailed code view for each file in the 'Impacted Files' section, eliminating the need to clutter 'Detail Code' with manual diffs. These diffs are also included in the generated Markdown reports.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 20: Optimized Notes with Line Stats
+
+**Date**: 2026-04-15
+**Task**: Optimized Notes with Line Stats
+
+### Summary
+
+Cleaned up the 'Detail Code' auto-generation. It no longer inserts full diff snippets into the notes field, as those are now viewable via the toggle. Instead, it only lists the file names along with their line addition/deletion statistics (+/-) for a cleaner, high-level summary.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
