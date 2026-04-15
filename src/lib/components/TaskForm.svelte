@@ -9,9 +9,16 @@
 	let filesInput = $state('');
 	let functionsInput = $state('');
 	let projectPath = $state('');
+	
+	// Folder Browser State
 	let isSyncing = $state(false);
-	let isPicking = $state(false);
-	let suggestions = $state<{ file: string; functions: string[]; type: string; selected?: boolean }[]>([]);
+	let showExplorer = $state(false);
+	let explorerPath = $state('');
+	let explorerParent = $state('');
+	let explorerDirs = $state<string[]>([]);
+	let pathSep = $state('/');
+	
+	let suggestions = $state<{ file: string; functions: string[]; type: string; diff: string; stats: any; selected?: boolean; showDiff?: boolean }[]>([]);
 	let recentCommits = $state<string[]>([]);
 	let errorMessage = $state('');
 
@@ -20,23 +27,30 @@
 		if (savedPath) projectPath = savedPath;
 	});
 
-	const pickFolder = async () => {
-		isPicking = true;
+	const openExplorer = async (navPath: string = '') => {
+		showExplorer = true;
 		errorMessage = '';
 		try {
-			const res = await fetch('/api/git/picker');
+			const res = await fetch(`/api/git/picker?path=${encodeURIComponent(navPath)}`);
 			const data = await res.json();
 			if (data.success) {
-				projectPath = data.path;
-				syncWithGit();
-			} else if (data.error) {
+				explorerPath = data.currentPath;
+				explorerParent = data.parentPath;
+				explorerDirs = data.directories;
+				pathSep = data.sep;
+			} else {
 				errorMessage = data.error;
 			}
 		} catch (e) {
-			errorMessage = 'Failed to open folder picker';
-		} finally {
-			isPicking = false;
+			errorMessage = 'Connection lost to folder server';
 		}
+	};
+
+	const selectFolder = () => {
+		projectPath = explorerPath;
+		showExplorer = false;
+		localStorage.setItem('last-project-path', projectPath);
+		syncWithGit();
 	};
 
 	const syncWithGit = async () => {
@@ -45,11 +59,10 @@
 		isSyncing = true;
 		errorMessage = '';
 		try {
-			localStorage.setItem('last-project-path', projectPath);
 			const res = await fetch(`/api/git?path=${encodeURIComponent(projectPath)}`);
 			const data = await res.json();
 			if (data.success) {
-				suggestions = data.suggestions.map((s: any) => ({ ...s, selected: false }));
+				suggestions = data.suggestions.map((s: any) => ({ ...s, selected: false, showDiff: false }));
 				recentCommits = data.recentCommits;
 			} else {
 				errorMessage = data.error || 'Failed to sync with git';
@@ -66,6 +79,11 @@
 		updateFormFromSelected();
 	};
 
+	const toggleDiff = (e: MouseEvent, index: number) => {
+		e.stopPropagation();
+		suggestions[index].showDiff = !suggestions[index].showDiff;
+	};
+
 	const updateFormFromSelected = () => {
 		const selected = suggestions.filter(s => s.selected);
 		if (selected.length === 0) return;
@@ -76,11 +94,21 @@
 			filesInput = s.file;
 			functionsInput = s.functions.join(', ');
 			description = `${s.type} in ${s.file}`;
+			
+			if (s.diff && s.diff !== 'New untracked file content...') {
+				notes = `Summary of changes in ${s.file}:\n` + 
+						s.diff.split('\n')
+						 .filter(l => l.startsWith('+') || l.startsWith('-'))
+						 .slice(0, 10)
+						 .join('\n');
+			}
 		} else {
 			title = `Batch Update: ${selected.length} files`;
 			filesInput = selected.map(s => s.file).join(', ');
 			functionsInput = selected.flatMap(s => s.functions).filter((v, i, a) => a.indexOf(v) === i).join(', ');
 			description = `Working on ${selected.length} files: ${selected.map(s => s.file.split(/[/\\]/).pop()).join(', ')}`;
+			notes = "Batch changes detected:\n" + 
+					selected.map(s => `- ${s.file} (+${s.stats.additions}, -${s.stats.deletions})`).join('\n');
 		}
 	};
 
@@ -101,15 +129,18 @@
 			.map((f) => f.trim())
 			.filter((f) => f !== '');
 
-		kanbanStore.addTask(title, files, functions, description, notes);
+		const newTask = kanbanStore.addTask(title, files, functions, description, notes, projectPath);
+		
+		if (projectPath) {
+			kanbanStore.syncToLocal(newTask, projectPath);
+		}
 
-		// Reset form
 		title = '';
 		description = '';
 		notes = '';
 		filesInput = '';
 		functionsInput = '';
-		suggestions = suggestions.map(s => ({ ...s, selected: false }));
+		suggestions = suggestions.map(s => ({ ...s, selected: false, showDiff: false }));
 		errorMessage = '';
 	};
 </script>
@@ -119,8 +150,8 @@
 		<!-- Folder Selection -->
 		<div class="flex flex-col gap-4 mb-8">
 			<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-				<h2 class="card-title text-2xl font-black uppercase tracking-tight flex items-center gap-3">
-					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+				<h2 class="card-title text-2xl font-black uppercase tracking-tight flex items-center gap-3 text-primary">
+					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
 					Duty Dashboard
 				</h2>
 				
@@ -134,12 +165,11 @@
 					
 					<button 
 						type="button" 
-						class="btn btn-primary btn-sm rounded-full gap-2 {isPicking ? 'loading' : ''}" 
-						onclick={pickFolder}
-						disabled={isPicking}
+						class="btn btn-primary btn-sm rounded-full gap-2" 
+						onclick={() => openExplorer(projectPath)}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-						Pick Project Folder
+						Pick Folder
 					</button>
 
 					<button 
@@ -164,6 +194,45 @@
 			{/if}
 		</div>
 
+		<!-- Explorer UI Overlay -->
+		{#if showExplorer}
+			<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" in:fade>
+				<div class="card w-full max-w-2xl bg-base-100 shadow-2xl border border-base-300 max-h-[80vh] flex flex-col" in:slide>
+					<div class="card-body p-0 overflow-hidden flex flex-col">
+						<div class="p-6 border-b border-base-300 bg-base-200/50">
+							<h3 class="font-black uppercase tracking-widest text-sm mb-4">Internal Folder Picker</h3>
+							<div class="flex items-center gap-2">
+								<button type="button" class="btn btn-sm btn-ghost" onclick={() => openExplorer(explorerParent)}>
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+								</button>
+								<div class="bg-base-100 px-4 py-2 rounded-xl border border-base-300 flex-1 font-mono text-[10px] truncate overflow-hidden">
+									{explorerPath}
+								</div>
+							</div>
+						</div>
+
+						<div class="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 custom-scrollbar">
+							{#each explorerDirs as dir}
+								<button 
+									type="button" 
+									class="flex items-center gap-3 p-3 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors text-left group"
+									onclick={() => openExplorer(explorerPath + pathSep + dir)}
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-40 group-hover:opacity-100 transition-opacity"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+									<span class="text-xs font-bold truncate">{dir}</span>
+								</button>
+							{/each}
+						</div>
+
+						<div class="p-6 border-t border-base-300 bg-base-200/50 flex justify-between gap-4">
+							<button type="button" class="btn btn-ghost rounded-full px-8" onclick={() => showExplorer = false}>Cancel</button>
+							<button type="button" class="btn btn-primary rounded-full px-8 font-black" onclick={selectFolder}>Select This Folder</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Git Suggestions (Multi-Select) -->
 		{#if suggestions.length > 0 || recentCommits.length > 0}
 			<div class="bg-base-200/50 rounded-3xl p-6 border border-base-300 mb-8" transition:slide>
@@ -178,26 +247,56 @@
 								</h3>
 								<span class="text-[10px] opacity-40">Select multiple to batch</span>
 							</div>
-							<div class="flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+							<div class="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
 								{#each suggestions as suggestion, i}
-									<button 
-										type="button" 
-										class="flex items-center gap-3 p-3 rounded-xl transition-all text-left border {suggestion.selected ? 'bg-primary text-primary-content border-primary shadow-lg scale-[1.02]' : 'bg-base-100 hover:bg-base-300 border-base-300'}"
-										onclick={() => toggleSelection(i)}
-									>
-										<div class="checkbox checkbox-sm pointer-events-none {suggestion.selected ? 'checkbox-primary bg-white' : ''}">
-											<input type="checkbox" checked={suggestion.selected} />
+									<div class="flex flex-col gap-1">
+										<div 
+											role="button"
+											tabindex="0"
+											class="flex items-center gap-3 p-3 rounded-xl transition-all text-left border cursor-pointer {suggestion.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-300 border-base-300'}"
+											onclick={() => toggleSelection(i)}
+											onkeydown={(e) => e.key === 'Enter' && toggleSelection(i)}
+										>
+											<div class="checkbox checkbox-sm pointer-events-none {suggestion.selected ? 'checkbox-primary bg-white' : ''}">
+												<input type="checkbox" checked={suggestion.selected} />
+											</div>
+											<div class="flex flex-col overflow-hidden flex-1">
+												<span class="font-mono text-xs truncate font-bold">{suggestion.file}</span>
+												<div class="flex items-center gap-2 mt-1">
+													<span class="text-[9px] opacity-60">
+														<span class="text-success">+{suggestion.stats.additions}</span> 
+														<span class="text-error">-{suggestion.stats.deletions}</span>
+													</span>
+													{#if suggestion.functions.length > 0}
+														<span class="text-[9px] opacity-40 truncate italic">({suggestion.functions.join(', ')})</span>
+													{/if}
+												</div>
+											</div>
+											<div class="flex items-center gap-2 ml-auto">
+												<button 
+													type="button"
+													class="btn btn-xs btn-ghost btn-circle" 
+													onclick={(e) => toggleDiff(e, i)}
+													title="Toggle view details"
+												>
+													<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {suggestion.showDiff ? 'rotate-180' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
+												</button>
+												<span class="badge badge-xs font-black {suggestion.selected ? 'badge-ghost' : (suggestion.type === 'Added' ? 'badge-success' : 'badge-warning')}">
+													{suggestion.type[0]}
+												</span>
+											</div>
 										</div>
-										<div class="flex flex-col overflow-hidden">
-											<span class="font-mono text-xs truncate font-bold">{suggestion.file}</span>
-											{#if suggestion.functions.length > 0}
-												<span class="text-[9px] opacity-60 truncate">({suggestion.functions.join(', ')})</span>
-											{/if}
-										</div>
-										<span class="ml-auto badge badge-xs font-black {suggestion.selected ? 'badge-ghost' : (suggestion.type === 'Added' ? 'badge-success' : 'badge-warning')}">
-											{suggestion.type[0]}
-										</span>
-									</button>
+										
+										{#if suggestion.showDiff && suggestion.diff}
+											<div class="bg-base-300/50 rounded-xl p-3 font-mono text-[10px] overflow-x-auto whitespace-pre border border-base-300 animate-in slide-in-from-top-2 duration-200" transition:slide>
+												{#each suggestion.diff.split('\n') as line}
+													<div class="{line.startsWith('+') ? 'text-success' : line.startsWith('-') ? 'text-error' : 'opacity-50'}">
+														{line}
+													</div>
+												{/each}
+											</div>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -309,7 +408,7 @@
 				id="duty-notes"
 				bind:value={notes}
 				placeholder="Deep dive logic reminders or technical notes..."
-				class="textarea textarea-bordered w-full focus:border-primary transition-all rounded-xl min-h-[100px]"
+				class="textarea textarea-bordered w-full focus:border-primary transition-all rounded-xl min-h-[150px] font-mono text-xs"
 			></textarea>
 		</div>
 

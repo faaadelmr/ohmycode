@@ -3,7 +3,7 @@
 	import KanbanCard from './KanbanCard.svelte';
 	import { fade } from 'svelte/transition';
 
-	const tasks = $derived(kanbanStore.tasks);
+	const tasks = $derived([...kanbanStore.tasks].sort((a, b) => b.createdAt - a.createdAt));
 </script>
 
 <div class="max-w-4xl mx-auto">

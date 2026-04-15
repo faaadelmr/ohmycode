@@ -20,16 +20,13 @@ export const GET: RequestHandler = async ({ url }) => {
 			return json({ success: false, error: 'Not a git repository' }, { status: 400 });
 		}
 
-		// Get changed files (porcelain is easier to parse)
-		// XY PATH
-		// X: status in index, Y: status in work tree
 		const statusOutput = execSync(`git -C "${targetPath}" status --porcelain`).toString();
 		
 		const changes = statusOutput.split('\n')
 			.filter(line => line.trim() !== '')
 			.map(line => {
 				const status = line.slice(0, 2);
-				const filePath = line.slice(3).replace(/"/g, ''); // Remove quotes if any
+				const filePath = line.slice(3).replace(/"/g, '').trim();
 				
 				let type = 'Modified';
 				if (status.includes('A') || status.includes('?')) type = 'Added';
@@ -44,11 +41,14 @@ export const GET: RequestHandler = async ({ url }) => {
 				};
 			});
 
-		// For each changed file, try to get more details (like functions)
 		const suggestions = changes.map(change => {
 			let functions: string[] = [];
+			let diffData = '';
+			let diffStats = { additions: 0, deletions: 0 };
+			
 			const fullPath = path.resolve(targetPath, change.file);
 			
+			// 1. Get Functions (for TS/JS/Svelte)
 			if (fs.existsSync(fullPath) && (fullPath.endsWith('.ts') || fullPath.endsWith('.js') || fullPath.endsWith('.svelte'))) {
 				try {
 					const content = fs.readFileSync(fullPath, 'utf8');
@@ -61,25 +61,44 @@ export const GET: RequestHandler = async ({ url }) => {
 							})
 							.filter(name => name && !['onMount', 'onDestroy', '$state', '$derived', '$props', '$effect'].includes(name)) as string[];
 					}
-				} catch (e) {
-					// Skip details if file can't be read
-				}
+				} catch (e) {}
+			}
+
+			// 2. Get Actual Diff Details
+			if (change.type !== 'Deleted') {
+				try {
+					// Get unified diff with 0 lines of context for brevity
+					// If file is untracked (status ??), we use --no-index or just read file
+					let diffCmd = `git -C "${targetPath}" diff -U0 "${change.file}"`;
+					if (change.status === '??') {
+						// For new untracked files, we can't easily 'diff', so we just show it's new
+						diffData = 'New untracked file content...';
+					} else {
+						diffData = execSync(diffCmd).toString();
+						
+						// Basic stats parsing from diff
+						const lines = diffData.split('\n');
+						lines.forEach(line => {
+							if (line.startsWith('+') && !line.startsWith('+++')) diffStats.additions++;
+							if (line.startsWith('-') && !line.startsWith('---')) diffStats.deletions++;
+						});
+					}
+				} catch (e) {}
 			}
 
 			return {
 				...change,
-				functions: [...new Set(functions)].slice(0, 5)
+				functions: [...new Set(functions)].slice(0, 5),
+				diff: diffData,
+				stats: diffStats
 			};
 		});
 
-		// Also get last 3 commit messages for "detail" context
 		let recentCommits: string[] = [];
 		try {
 			const logOutput = execSync(`git -C "${targetPath}" log -n 3 --oneline`).toString();
 			recentCommits = logOutput.split('\n').filter(l => l.trim() !== '');
-		} catch (e) {
-			// Ignore if no commits
-		}
+		} catch (e) {}
 
 		return json({
 			success: true,

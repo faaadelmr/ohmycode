@@ -245,3 +245,243 @@ Added SVG icons across the dashboard, form labels, and log cards to create a mor
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Local File Persistence & Rich Icons
+
+**Date**: 2026-04-15
+**Task**: Local File Persistence & Rich Icons
+
+### Summary
+
+Implemented server-side file persistence. Tickets are now automatically saved as Markdown files in the project's 'daily-logs/YYYYMMDD/' folder. Added rich SVG icons to all form fields and log cards for an 'awesome' visual experience.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Fixed Log Sorting
+
+**Date**: 2026-04-15
+**Task**: Fixed Log Sorting
+
+### Summary
+
+Ensured that the Recent Log History is always sorted by the most recent timestamp first, providing a proper chronological view of daily worker activities.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 11: Centralized Log Storage
+
+**Date**: 2026-04-15
+**Task**: Centralized Log Storage
+
+### Summary
+
+Moved Markdown log persistence from the individual project folders to a centralized location in the user's home directory: ~/.ohmycode/logs/. Files are organized by Project Name and Date for better portability across different projects and PCs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 12: Enhanced Local Backup with Files
+
+**Date**: 2026-04-15
+**Task**: Enhanced Local Backup with Files
+
+### Summary
+
+Updated the centralized storage API to not only save the Markdown log but also copy the actual source files involved in the task. Files are now backed up in ~/.ohmycode/logs/[Project]/[Date]/files/ maintaining their original directory structure.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 13: Full Deletion Sync
+
+**Date**: 2026-04-15
+**Task**: Full Deletion Sync
+
+### Summary
+
+Implemented automatic disk cleanup. When a log entry is deleted from the UI, the system now automatically deletes the corresponding .md report and backed up files from the centralized ~/.ohmycode storage directory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 14: Integrated Git Diff Details
+
+**Date**: 2026-04-15
+**Task**: Integrated Git Diff Details
+
+### Summary
+
+Updated Git API to fetch actual diff content. Form now shows line addition/deletion stats and a toggleable detailed diff view. Selecting a file now automatically summarizes the first 10 lines of its changes into the 'Detail Code' field for effortless reporting.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 15: Robust Folder Picker Fix
+
+**Date**: 2026-04-15
+**Task**: Robust Folder Picker Fix
+
+### Summary
+
+Addressed the 'stuck' folder picker by implementing a more advanced PowerShell script that uses Win32 API (SetForegroundWindow) to force the dialog to the front. Added ExecutionPolicy Bypass to ensure the script runs smoothly on all Windows systems.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 16: Cross-Platform Internal Folder Browser
+
+**Date**: 2026-04-15
+**Task**: Cross-Platform Internal Folder Browser
+
+### Summary
+
+Replaced the Windows-only PowerShell picker with a custom internal directory browser. This ensures folder selection works across Linux, Android, and Windows by navigating the file system directly through the web UI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
