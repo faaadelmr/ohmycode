@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 35
 - **Last Active**: 2026-04-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~817 | Active |
+| `journal-1.md` | ~1027 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,13 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 35 | 2026-04-15 | Full Git Integration & Staging Watcher | - |
+| 34 | 2026-04-15 | Robust Auto-Refresh & Source Control Experience | - |
+| 32 | 2026-04-15 | Final Git Workflow Polish | - |
+| 31 | 2026-04-15 | Fixed Watcher Crash (Invalid State) | - |
+| 30 | 2026-04-15 | Fixed Watcher Crash & UI Persistence | - |
+| 29 | 2026-04-15 | Fixed SSE Stream Encoding | - |
+| 28 | 2026-04-15 | Real-time Auto-Refresh & SSE | - |
 | 27 | 2026-04-15 | VS Code Style Dual Git Staging | - |
 | 26 | 2026-04-15 | Polished Git Drag-and-Drop Experience | - |
 | 25 | 2026-04-15 | Git Drag-and-Drop Staging | - |

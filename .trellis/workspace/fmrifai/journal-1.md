@@ -815,3 +815,213 @@ Aligned the Git UI with VS Code behavior. A single file can now appear in both S
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Real-time Auto-Refresh & SSE
+
+**Date**: 2026-04-15
+**Task**: Real-time Auto-Refresh & SSE
+
+### Summary
+
+Implemented a real-time Git watcher using Server-Sent Events (SSE). The dashboard now automatically refreshes its Git status whenever file changes are detected in the project folder, ensuring the UI is always in sync with your local coding activity without manual refresh.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 29: Fixed SSE Stream Encoding
+
+**Date**: 2026-04-15
+**Task**: Fixed SSE Stream Encoding
+
+### Summary
+
+Fixed the real-time auto-refresh by correctly encoding the SSE stream chunks as Uint8Array. This ensures standard browser EventSource can parse the server events properly, enabling the UI to refresh automatically on file changes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 30: Fixed Watcher Crash & UI Persistence
+
+**Date**: 2026-04-15
+**Task**: Fixed Watcher Crash & UI Persistence
+
+### Summary
+
+Fixed a server-side crash in the SSE watcher by adding proper encoding. Refined the TaskForm to preserve selected files and toggle states during real-time auto-refreshes, ensuring a seamless and non-disruptive user experience as files change.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 31: Fixed Watcher Crash (Invalid State)
+
+**Date**: 2026-04-15
+**Task**: Fixed Watcher Crash (Invalid State)
+
+### Summary
+
+Fixed a critical bug in the real-time watcher that caused the server to crash with 'ERR_INVALID_STATE'. Added safety checks and a closed flag to ensure events are never enqueued after the stream has been closed by the client or server.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 32: Final Git Workflow Polish
+
+**Date**: 2026-04-15
+**Task**: Final Git Workflow Polish
+
+### Summary
+
+Completed the Git integration overhaul. Fixed the 'close on refresh' issue by preserving UI state during sync. Refined the real-time auto-refresh with stable SSE encoding. Added dual-state tracking for partial staged files and implemented smooth, optimistic Drag-and-Drop staging with FLIP animations. The dashboard is now a fully-featured, reactive Git client.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 34: Robust Auto-Refresh & Source Control Experience
+
+**Date**: 2026-04-15
+**Task**: Robust Auto-Refresh & Source Control Experience
+
+### Summary
+
+Fully implemented the 'Source Control' experience in the browser. Added a real-time status indicator (Connecting/Live/Offline) and implemented fallback polling if SSE fails. Fixed UI stability by ensuring file lists and selections remain intact during auto-refreshes, providing a seamless live-sync experience as files are edited in external editors.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 35: Full Git Integration & Staging Watcher
+
+**Date**: 2026-04-15
+**Task**: Full Git Integration & Staging Watcher
+
+### Summary
+
+Fixed the auto-refresh synchronization between the browser and external Git clients (like VS Code). Updated the file watcher to include .git/index, allowing the app to instantly detect when files are staged or unstaged outside the browser. Refined the Git status parsing to accurately reflect these changes in real-time.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

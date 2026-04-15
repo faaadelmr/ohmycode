@@ -30,6 +30,12 @@
 	let errorMessage = $state('');
 	let successMessage = $state('');
 
+	// Real-time Watcher State
+	let eventSource: EventSource | null = null;
+	let watcherStatus = $state<'connecting' | 'live' | 'offline'>('offline');
+	let lastSyncTime = $state<string>('');
+	let fallbackInterval: any = null;
+
 	// UI feedback for drag
 	let isDragging = $state(false);
 	let overStaged = $state(false);
@@ -37,8 +43,64 @@
 
 	onMount(() => {
 		const savedPath = localStorage.getItem('last-project-path');
-		if (savedPath) projectPath = savedPath;
+		if (savedPath) {
+			projectPath = savedPath;
+			setupWatcher(savedPath);
+		}
+
+		return () => {
+			cleanupWatcher();
+		};
 	});
+
+	const cleanupWatcher = () => {
+		if (eventSource) {
+			eventSource.close();
+			eventSource = null;
+		}
+		if (fallbackInterval) {
+			clearInterval(fallbackInterval);
+			fallbackInterval = null;
+		}
+		watcherStatus = 'offline';
+	};
+
+	const setupWatcher = (path: string) => {
+		cleanupWatcher();
+		if (!path) return;
+
+		watcherStatus = 'connecting';
+		
+		// 1. Primary: EventSource (SSE)
+		eventSource = new EventSource(`/api/git/watch?path=${encodeURIComponent(path)}`);
+		
+		eventSource.onopen = () => {
+			console.log('[Watcher] SSE Connected');
+			watcherStatus = 'live';
+			syncWithGit();
+		};
+
+		eventSource.addEventListener('change', (e: any) => {
+			console.log('[Watcher] Remote change detected:', e.data);
+			syncWithGit();
+		});
+
+		eventSource.onerror = (err) => {
+			console.warn('[Watcher] SSE Connection error, switching to fallback polling...');
+			cleanupWatcher();
+			startFallbackPolling(path);
+		};
+	};
+
+	const startFallbackPolling = (path: string) => {
+		watcherStatus = 'connecting';
+		// Poll every 10 seconds as fallback
+		fallbackInterval = setInterval(() => {
+			console.log('[Watcher] Polling for changes...');
+			syncWithGit();
+			watcherStatus = 'live'; // Represent active polling as live-ish
+		}, 10000);
+	};
 
 	const openExplorer = async (navPath: string = '') => {
 		showExplorer = true;
@@ -63,6 +125,7 @@
 		projectPath = explorerPath;
 		showExplorer = false;
 		localStorage.setItem('last-project-path', projectPath);
+		setupWatcher(projectPath);
 		syncWithGit();
 	};
 
@@ -70,21 +133,29 @@
 		if (!projectPath.trim()) return;
 		
 		isSyncing = true;
-		errorMessage = '';
 		try {
-			localStorage.setItem('last-project-path', projectPath);
 			const res = await fetch(`/api/git?path=${encodeURIComponent(projectPath)}`);
 			const data = await res.json();
 			if (data.success) {
-				// Use filename+type as a stable ID for flip animations
-				suggestions = data.suggestions.map((s: any) => ({ ...s, id: `${s.file}-${s.type}`, selected: false, showDiff: false }));
-				stagedChanges = data.stagedChanges.map((s: any) => ({ ...s, id: `${s.file}-${s.type}`, selected: false, showDiff: false }));
+				const syncList = (newList: any[], oldList: any[]) => {
+					return newList.map(newItem => {
+						const oldItem = oldList.find(o => o.file === newItem.file && o.type === newItem.type);
+						return {
+							...newItem,
+							id: `${newItem.file}-${newItem.type}`,
+							selected: oldItem ? oldItem.selected : false,
+							showDiff: oldItem ? oldItem.showDiff : false
+						};
+					});
+				};
+
+				suggestions = syncList(data.suggestions, suggestions);
+				stagedChanges = syncList(data.stagedChanges, stagedChanges);
 				recentCommits = data.recentCommits;
-			} else {
-				errorMessage = data.error || 'Failed to sync with git';
+				lastSyncTime = new Date().toLocaleTimeString();
 			}
 		} catch (e) {
-			errorMessage = 'Failed to connect to Git API';
+			console.error('Failed to sync with git', e);
 		} finally {
 			isSyncing = false;
 		}
@@ -144,8 +215,6 @@
 			e.dataTransfer.setData('fileName', file);
 			e.dataTransfer.setData('fromStaged', currentlyStaged.toString());
 			e.dataTransfer.effectAllowed = 'move';
-			
-			// Custom ghost image styling could be added here if needed
 		}
 	};
 
@@ -164,7 +233,7 @@
 
 		if (!fileName || fromStaged === dropToStaged || !projectPath) return;
 
-		// Optimistic UI Update: Move item immediately for smoothness
+		// Optimistic Update
 		if (dropToStaged) {
 			const idx = suggestions.findIndex(s => s.file === fileName);
 			if (idx !== -1) {
@@ -182,24 +251,13 @@
 		}
 
 		try {
-			const res = await fetch('/api/git', {
+			await fetch('/api/git', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					projectPath,
-					file: fileName,
-					stage: dropToStaged
-				})
+				body: JSON.stringify({ projectPath, file: fileName, stage: dropToStaged })
 			});
-			const data = await res.json();
-			if (!data.success) {
-				errorMessage = data.error;
-				syncWithGit(); // Revert on failure
-			} else {
-				syncWithGit(); // Final sync to be sure
-			}
+			syncWithGit();
 		} catch (err) {
-			errorMessage = 'Failed to update git status';
 			syncWithGit();
 		}
 	};
@@ -275,15 +333,27 @@
 		<!-- Folder Selection -->
 		<div class="flex flex-col gap-4 mb-8">
 			<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-				<h2 class="card-title text-2xl font-black uppercase tracking-tight flex items-center gap-3 text-primary">
-					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-					Duty Dashboard
-				</h2>
+				<div class="flex items-center gap-4">
+					<h2 class="card-title text-2xl font-black uppercase tracking-tight flex items-center gap-3 text-primary">
+						<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+						Duty Dashboard
+					</h2>
+					
+					<!-- Watcher Status Indicator -->
+					{#if projectPath}
+						<div 
+							class="badge badge-sm gap-1.5 py-3 px-3 font-bold uppercase text-[9px] border-none shadow-sm transition-colors duration-500 {watcherStatus === 'live' ? 'bg-success/10 text-success' : watcherStatus === 'connecting' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error'}"
+							title={watcherStatus === 'live' ? `Real-time monitoring active. Last sync: ${lastSyncTime}` : 'Connecting to project...'}
+						>
+							<span class="w-1.5 h-1.5 rounded-full {watcherStatus === 'live' ? 'bg-success animate-pulse' : watcherStatus === 'connecting' ? 'bg-warning animate-bounce' : 'bg-error'}"></span>
+							{watcherStatus}
+						</div>
+					{/if}
+				</div>
 				
 				<div class="flex flex-wrap items-center gap-2">
 					{#if projectPath}
 						<div class="badge badge-outline gap-2 font-mono text-[10px] py-3 opacity-70 border-base-300">
-							<span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
 							{projectPath}
 						</div>
 					{/if}
@@ -302,7 +372,7 @@
 						class="btn btn-ghost btn-sm btn-circle {isSyncing ? 'loading' : ''}" 
 						onclick={syncWithGit}
 						disabled={isSyncing || !projectPath}
-						title="Refresh git status"
+						title="Manual sync now"
 					>
 						{#if !isSyncing}
 							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
@@ -334,7 +404,7 @@
 						<div class="p-6 border-b border-base-300 bg-base-200/50">
 							<h3 class="font-black uppercase tracking-widest text-sm mb-4">Internal Folder Picker</h3>
 							<div class="flex items-center gap-2">
-								<button type="button" class="btn btn-sm btn-ghost" onclick={() => openExplorer(explorerParent)} aria-label="Go back">
+								<button type="button" class="btn btn-sm btn-ghost" onclick={() => openExplorer(explorerParent)} title="Back">
 									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
 								</button>
 								<div class="bg-base-100 px-4 py-2 rounded-xl border border-base-300 flex-1 font-mono text-[10px] truncate overflow-hidden">
@@ -415,7 +485,7 @@
 												</span>
 											</div>
 										</div>
-										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, true)} aria-label="Toggle diff">
+										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, true)} title="Toggle Diff">
 											<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
 										</button>
 									</div>
@@ -483,7 +553,7 @@
 												</span>
 											</div>
 										</div>
-										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} aria-label="Toggle diff">
+										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} title="Toggle Diff">
 											<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
 										</button>
 									</div>
@@ -530,7 +600,6 @@
 		{/if}
 
 		<!-- Form Fields -->
-
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 			<div class="form-control">
 				<label class="label pt-0" for="duty-title">
