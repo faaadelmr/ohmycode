@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { kanbanStore } from '$lib/kanban.svelte';
 	import { onMount } from 'svelte';
-	import { fade, slide } from 'svelte/transition';
+	import { fade, slide, fly } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
 
 	let title = $state('');
 	let description = $state('');
@@ -10,17 +11,29 @@
 	let functionsInput = $state('');
 	let projectPath = $state('');
 	
+	// Git Commit Switch
+	let includeGitCommit = $state(false);
+	
 	// Folder Browser State
 	let isSyncing = $state(false);
+	let isPicking = $state(false);
+	let isCommitting = $state(false);
 	let showExplorer = $state(false);
 	let explorerPath = $state('');
 	let explorerParent = $state('');
 	let explorerDirs = $state<string[]>([]);
 	let pathSep = $state('/');
 	
-	let suggestions = $state<{ file: string; functions: string[]; type: string; diff: string; stats: any; selected?: boolean; showDiff?: boolean }[]>([]);
+	let suggestions = $state<{ id: string; file: string; functions: string[]; type: string; diff: string; stats: any; selected?: boolean; showDiff?: boolean }[]>([]);
+	let stagedChanges = $state<{ id: string; file: string; functions: string[]; type: string; diff: string; stats: any; selected?: boolean; showDiff?: boolean }[]>([]);
 	let recentCommits = $state<string[]>([]);
 	let errorMessage = $state('');
+	let successMessage = $state('');
+
+	// UI feedback for drag
+	let isDragging = $state(false);
+	let overStaged = $state(false);
+	let overUnstaged = $state(false);
 
 	onMount(() => {
 		const savedPath = localStorage.getItem('last-project-path');
@@ -59,10 +72,13 @@
 		isSyncing = true;
 		errorMessage = '';
 		try {
+			localStorage.setItem('last-project-path', projectPath);
 			const res = await fetch(`/api/git?path=${encodeURIComponent(projectPath)}`);
 			const data = await res.json();
 			if (data.success) {
-				suggestions = data.suggestions.map((s: any) => ({ ...s, selected: false, showDiff: false }));
+				// Use filename+type as a stable ID for flip animations
+				suggestions = data.suggestions.map((s: any) => ({ ...s, id: `${s.file}-${s.type}`, selected: false, showDiff: false }));
+				stagedChanges = data.stagedChanges.map((s: any) => ({ ...s, id: `${s.file}-${s.type}`, selected: false, showDiff: false }));
 				recentCommits = data.recentCommits;
 			} else {
 				errorMessage = data.error || 'Failed to sync with git';
@@ -74,18 +90,29 @@
 		}
 	};
 
-	const toggleSelection = (index: number) => {
-		suggestions[index].selected = !suggestions[index].selected;
+	const toggleSelection = (index: number, isStagedList: boolean) => {
+		if (isStagedList) {
+			stagedChanges[index].selected = !stagedChanges[index].selected;
+		} else {
+			suggestions[index].selected = !suggestions[index].selected;
+		}
 		updateFormFromSelected();
 	};
 
-	const toggleDiff = (e: MouseEvent, index: number) => {
+	const toggleDiff = (e: MouseEvent, index: number, isStagedList: boolean) => {
 		e.stopPropagation();
-		suggestions[index].showDiff = !suggestions[index].showDiff;
+		if (isStagedList) {
+			stagedChanges[index].showDiff = !stagedChanges[index].showDiff;
+		} else {
+			suggestions[index].showDiff = !suggestions[index].showDiff;
+		}
 	};
 
 	const updateFormFromSelected = () => {
-		const selected = suggestions.filter(s => s.selected);
+		const selectedUnstaged = suggestions.filter(s => s.selected);
+		const selectedStaged = stagedChanges.filter(s => s.selected);
+		const selected = [...selectedStaged, ...selectedUnstaged];
+
 		if (selected.length === 0) return;
 
 		if (selected.length === 1) {
@@ -101,7 +128,6 @@
 			functionsInput = selected.flatMap(s => s.functions).filter((v, i, a) => a.indexOf(v) === i).join(', ');
 			description = `Working on ${selected.length} files: ${selected.map(s => s.file.split(/[/\\]/).pop()).join(', ')}`;
 			
-			// Simple list of files with stats
 			notes = "Impacted files:\n" + 
 					selected.map(s => `- ${s.file} (+${s.stats.additions} -${s.stats.deletions})`).join('\n');
 		}
@@ -111,7 +137,74 @@
 		description = `Context: ${msg}`;
 	};
 
-	const handleSubmit = (e: SubmitEvent) => {
+	// --- Drag and Drop Logic ---
+	const handleDragStart = (e: DragEvent, file: string, currentlyStaged: boolean) => {
+		isDragging = true;
+		if (e.dataTransfer) {
+			e.dataTransfer.setData('fileName', file);
+			e.dataTransfer.setData('fromStaged', currentlyStaged.toString());
+			e.dataTransfer.effectAllowed = 'move';
+			
+			// Custom ghost image styling could be added here if needed
+		}
+	};
+
+	const handleDragEnd = () => {
+		isDragging = false;
+		overStaged = false;
+		overUnstaged = false;
+	};
+
+	const handleDrop = async (e: DragEvent, dropToStaged: boolean) => {
+		e.preventDefault();
+		handleDragEnd();
+		
+		const fileName = e.dataTransfer?.getData('fileName');
+		const fromStaged = e.dataTransfer?.getData('fromStaged') === 'true';
+
+		if (!fileName || fromStaged === dropToStaged || !projectPath) return;
+
+		// Optimistic UI Update: Move item immediately for smoothness
+		if (dropToStaged) {
+			const idx = suggestions.findIndex(s => s.file === fileName);
+			if (idx !== -1) {
+				const item = suggestions[idx];
+				suggestions.splice(idx, 1);
+				stagedChanges.push({ ...item, isStaged: true });
+			}
+		} else {
+			const idx = stagedChanges.findIndex(s => s.file === fileName);
+			if (idx !== -1) {
+				const item = stagedChanges[idx];
+				stagedChanges.splice(idx, 1);
+				suggestions.push({ ...item, isStaged: false });
+			}
+		}
+
+		try {
+			const res = await fetch('/api/git', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					projectPath,
+					file: fileName,
+					stage: dropToStaged
+				})
+			});
+			const data = await res.json();
+			if (!data.success) {
+				errorMessage = data.error;
+				syncWithGit(); // Revert on failure
+			} else {
+				syncWithGit(); // Final sync to be sure
+			}
+		} catch (err) {
+			errorMessage = 'Failed to update git status';
+			syncWithGit();
+		}
+	};
+
+	const handleSubmit = async (e: SubmitEvent) => {
 		e.preventDefault();
 		if (!title.trim()) return;
 
@@ -124,11 +217,40 @@
 			.map((f) => f.trim())
 			.filter((f) => f !== '');
 
-		// Collect diffs for selected files
 		const fileDiffs: Record<string, string> = {};
-		suggestions.filter(s => s.selected).forEach(s => {
+		[...stagedChanges, ...suggestions].filter(s => s.selected).forEach(s => {
 			if (s.diff) fileDiffs[s.file] = s.diff;
 		});
+
+		if (includeGitCommit && projectPath) {
+			isCommitting = true;
+			try {
+				const commitRes = await fetch('/api/git', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						projectPath,
+						message: notes || description || title,
+						files: files.length > 0 ? files : null 
+					})
+				});
+				const commitData = await commitRes.json();
+				if (!commitData.success) {
+					errorMessage = `Git Commit Failed: ${commitData.error}`;
+					isCommitting = false;
+					return;
+				} else {
+					successMessage = 'Git Commit Successful!';
+					setTimeout(() => successMessage = '', 3000);
+				}
+			} catch (err) {
+				errorMessage = 'Failed to execute git commit API';
+				isCommitting = false;
+				return;
+			} finally {
+				isCommitting = false;
+			}
+		}
 
 		const newTask = kanbanStore.addTask(title, files, functions, description, notes, projectPath, fileDiffs);
 		
@@ -141,7 +263,9 @@
 		notes = '';
 		filesInput = '';
 		functionsInput = '';
+		includeGitCommit = false;
 		suggestions = suggestions.map(s => ({ ...s, selected: false, showDiff: false }));
+		stagedChanges = stagedChanges.map(s => ({ ...s, selected: false, showDiff: false }));
 		errorMessage = '';
 	};
 </script>
@@ -166,7 +290,7 @@
 					
 					<button 
 						type="button" 
-						class="btn btn-primary btn-sm rounded-full gap-2" 
+						class="btn btn-primary btn-sm rounded-full gap-2 transition-transform hover:scale-105 active:scale-95" 
 						onclick={() => openExplorer(projectPath)}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
@@ -178,7 +302,7 @@
 						class="btn btn-ghost btn-sm btn-circle {isSyncing ? 'loading' : ''}" 
 						onclick={syncWithGit}
 						disabled={isSyncing || !projectPath}
-						title="Refresh changes"
+						title="Refresh git status"
 					>
 						{#if !isSyncing}
 							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
@@ -193,17 +317,24 @@
 					<span>{errorMessage}</span>
 				</div>
 			{/if}
+
+			{#if successMessage}
+				<div class="alert alert-success py-2 text-xs rounded-lg" transition:fade>
+					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2l4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+					<span>{successMessage}</span>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Explorer UI Overlay -->
 		{#if showExplorer}
 			<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" in:fade>
-				<div class="card w-full max-w-2xl bg-base-100 shadow-2xl border border-base-300 max-h-[80vh] flex flex-col" in:slide>
+				<div class="card w-full max-w-2xl bg-base-100 shadow-2xl border border-base-300 max-h-[80vh] flex flex-col" in:fly={{ y: 20 }}>
 					<div class="card-body p-0 overflow-hidden flex flex-col">
 						<div class="p-6 border-b border-base-300 bg-base-200/50">
 							<h3 class="font-black uppercase tracking-widest text-sm mb-4">Internal Folder Picker</h3>
 							<div class="flex items-center gap-2">
-								<button type="button" class="btn btn-sm btn-ghost" onclick={() => openExplorer(explorerParent)}>
+								<button type="button" class="btn btn-sm btn-ghost" onclick={() => openExplorer(explorerParent)} aria-label="Go back">
 									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
 								</button>
 								<div class="bg-base-100 px-4 py-2 rounded-xl border border-base-300 flex-1 font-mono text-[10px] truncate overflow-hidden">
@@ -234,101 +365,172 @@
 			</div>
 		{/if}
 
-		<!-- Git Suggestions (Multi-Select) -->
-		{#if suggestions.length > 0 || recentCommits.length > 0}
-			<div class="bg-base-200/50 rounded-3xl p-6 border border-base-300 mb-8" transition:slide>
-				<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-					<!-- Changed Files -->
-					{#if suggestions.length > 0}
-						<div>
-							<div class="flex justify-between items-center mb-4">
-								<h3 class="text-xs font-black uppercase tracking-widest opacity-50 flex items-center gap-2">
-									<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-									Detected Changes
-								</h3>
-								<span class="text-[10px] opacity-40">Select multiple to batch</span>
-							</div>
-							<div class="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-								{#each suggestions as suggestion, i}
-									<div class="flex flex-col gap-1">
-										<div 
-											role="button"
-											tabindex="0"
-											class="flex items-center gap-3 p-3 rounded-xl transition-all text-left border cursor-pointer {suggestion.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-300 border-base-300'}"
-											onclick={() => toggleSelection(i)}
-											onkeydown={(e) => e.key === 'Enter' && toggleSelection(i)}
-										>
-											<div class="checkbox checkbox-sm pointer-events-none {suggestion.selected ? 'checkbox-primary bg-white' : ''}">
-												<input type="checkbox" checked={suggestion.selected} />
-											</div>
-											<div class="flex flex-col overflow-hidden flex-1">
-												<span class="font-mono text-xs truncate font-bold">{suggestion.file}</span>
-												<div class="flex items-center gap-2 mt-1">
-													<span class="text-[9px] opacity-60">
-														<span class="text-success">+{suggestion.stats.additions}</span> 
-														<span class="text-error">-{suggestion.stats.deletions}</span>
-													</span>
-													{#if suggestion.functions.length > 0}
-														<span class="text-[9px] opacity-40 truncate italic">({suggestion.functions.join(', ')})</span>
-													{/if}
-												</div>
-											</div>
-											<div class="flex items-center gap-2 ml-auto">
-												<button 
-													type="button"
-													class="btn btn-xs btn-ghost btn-circle" 
-													onclick={(e) => toggleDiff(e, i)}
-													title="Toggle view details"
-												>
-													<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {suggestion.showDiff ? 'rotate-180' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
-												</button>
-												<span class="badge badge-xs font-black {suggestion.selected ? 'badge-ghost' : (suggestion.type === 'Added' ? 'badge-success' : 'badge-warning')}">
-													{suggestion.type[0]}
+		<!-- Git Changes (Side by Side) -->
+		{#if suggestions.length > 0 || stagedChanges.length > 0}
+			<div class="bg-base-200/50 rounded-[2.5rem] p-8 border border-base-300 mb-12 shadow-inner" transition:slide>
+				<div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+					<!-- Staged Changes -->
+					<div 
+						class="flex flex-col h-full"
+						role="region"
+						aria-label="Staged Changes Dropzone"
+						ondrop={(e) => handleDrop(e, true)}
+						ondragover={(e) => { e.preventDefault(); overStaged = true; }}
+						ondragleave={() => overStaged = false}
+					>
+						<div class="flex justify-between items-center mb-5 px-2">
+							<h3 class="text-xs font-black uppercase tracking-widest text-success flex items-center gap-2">
+								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+								Staged Changes
+							</h3>
+							<span class="badge badge-sm badge-success font-black bg-success/20 text-success border-none px-3">{stagedChanges.length}</span>
+						</div>
+						<div class="flex flex-col gap-3 min-h-[150px] bg-base-100/50 rounded-3xl p-3 border-2 border-dashed transition-all {overStaged ? 'border-success bg-success/5 scale-[1.02] shadow-xl' : 'border-base-300'}">
+							{#each stagedChanges as s, i (s.id)}
+								<div 
+									animate:flip={{ duration: 400 }}
+									class="flex flex-col gap-1"
+									draggable="true"
+									role="listitem"
+									aria-label="Staged file {s.file}"
+									ondragstart={(e) => handleDragStart(e, s.file, true)}
+									ondragend={handleDragEnd}
+								>
+									<div 
+										role="button"
+										tabindex="0"
+										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border cursor-grab active:cursor-grabbing {s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}"
+										onclick={() => toggleSelection(i, true)}
+										onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, true)}
+									>
+										<div class="checkbox checkbox-sm pointer-events-none {s.selected ? 'checkbox-primary bg-white' : ''}">
+											<input type="checkbox" checked={s.selected} aria-label="Select file"/>
+										</div>
+										<div class="flex flex-col overflow-hidden flex-1">
+											<span class="font-mono text-xs truncate font-bold">{s.file}</span>
+											<div class="flex items-center gap-2 mt-1">
+												<span class="text-[9px] font-black">
+													<span class="text-success">+{s.stats.additions}</span> 
+													<span class="text-error">-{s.stats.deletions}</span>
 												</span>
 											</div>
 										</div>
-										
-										{#if suggestion.showDiff && suggestion.diff}
-											<div class="bg-base-300/50 rounded-xl p-3 font-mono text-[10px] overflow-x-auto whitespace-pre border border-base-300 animate-in slide-in-from-top-2 duration-200" transition:slide>
-												{#each suggestion.diff.split('\n') as line}
-													<div class="{line.startsWith('+') ? 'text-success' : line.startsWith('-') ? 'text-error' : 'opacity-50'}">
-														{line}
-													</div>
-												{/each}
-											</div>
-										{/if}
+										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, true)} aria-label="Toggle diff">
+											<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
+										</button>
 									</div>
-								{/each}
-							</div>
+									{#if s.showDiff && s.diff}
+										<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
+											{#each s.diff.split('\n') as line}
+												<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							{/each}
+							{#if stagedChanges.length === 0}
+								<div class="flex-1 flex flex-col items-center justify-center opacity-20 py-10 gap-3">
+									<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+									<span class="italic text-[10px] font-black uppercase tracking-widest">Drop here to stage</span>
+								</div>
+							{/if}
 						</div>
-					{/if}
+					</div>
 
-					<!-- Recent Commits -->
-					{#if recentCommits.length > 0}
-						<div>
-							<h3 class="text-xs font-black uppercase tracking-widest opacity-50 mb-4 flex items-center gap-2">
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-								Recent Commit Messages
+					<!-- Unstaged (Detected) Changes -->
+					<div 
+						class="flex flex-col h-full"
+						role="region"
+						aria-label="Detected Changes Dropzone"
+						ondrop={(e) => handleDrop(e, false)}
+						ondragover={(e) => { e.preventDefault(); overUnstaged = true; }}
+						ondragleave={() => overUnstaged = false}
+					>
+						<div class="flex justify-between items-center mb-5 px-2">
+							<h3 class="text-xs font-black uppercase tracking-widest text-warning flex items-center gap-2">
+								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+								Detected Changes
 							</h3>
-							<div class="flex flex-col gap-2">
-								{#each recentCommits as commit}
-									<button 
-										type="button" 
-										class="p-3 rounded-xl bg-base-100/50 hover:bg-base-300 border border-dashed border-base-300 transition-all text-left text-xs opacity-80 hover:opacity-100 italic flex items-start gap-2"
-										onclick={() => useCommitMessage(commit)}
-									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 shrink-0 opacity-40"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path><path d="M9 18c-4.51 2-5-2-7-2"></path></svg>
-										"{commit}"
-									</button>
-								{/each}
-							</div>
+							<span class="badge badge-sm badge-warning font-black bg-warning/20 text-warning border-none px-3">{suggestions.length}</span>
 						</div>
-					{/if}
+						<div class="flex flex-col gap-3 min-h-[150px] bg-base-100/50 rounded-3xl p-3 border-2 border-dashed transition-all {overUnstaged ? 'border-warning bg-warning/5 scale-[1.02] shadow-xl' : 'border-base-300'}">
+							{#each suggestions as s, i (s.id)}
+								<div 
+									animate:flip={{ duration: 400 }}
+									class="flex flex-col gap-1"
+									draggable="true"
+									role="listitem"
+									aria-label="Unstaged file {s.file}"
+									ondragstart={(e) => handleDragStart(e, s.file, false)}
+									ondragend={handleDragEnd}
+								>
+									<div 
+										role="button"
+										tabindex="0"
+										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border cursor-grab active:cursor-grabbing {s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}"
+										onclick={() => toggleSelection(i, false)}
+										onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, false)}
+									>
+										<div class="checkbox checkbox-sm pointer-events-none {s.selected ? 'checkbox-primary bg-white' : ''}">
+											<input type="checkbox" checked={s.selected} aria-label="Select file"/>
+										</div>
+										<div class="flex flex-col overflow-hidden flex-1">
+											<span class="font-mono text-xs truncate font-bold">{s.file}</span>
+											<div class="flex items-center gap-2 mt-1">
+												<span class="text-[9px] font-black">
+													<span class="text-success">+{s.stats.additions}</span> 
+													<span class="text-error">-{s.stats.deletions}</span>
+												</span>
+											</div>
+										</div>
+										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} aria-label="Toggle diff">
+											<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
+										</button>
+									</div>
+									{#if s.showDiff && s.diff}
+										<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
+											{#each s.diff.split('\n') as line}
+												<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							{/each}
+							{#if suggestions.length === 0}
+								<div class="flex-1 flex flex-col items-center justify-center opacity-20 py-10 gap-3">
+									<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+									<span class="italic text-[10px] font-black uppercase tracking-widest">All changes are staged</span>
+								</div>
+							{/if}
+						</div>
+					</div>
 				</div>
+
+				<!-- Recent Commit Messages (Bottom) -->
+				{#if recentCommits.length > 0}
+					<div class="mt-10 pt-8 border-t border-base-300/50">
+						<h3 class="text-xs font-black uppercase tracking-widest opacity-40 mb-5 flex items-center gap-2 ml-2">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+							Recent History Context
+						</h3>
+						<div class="flex flex-wrap gap-3">
+							{#each recentCommits as commit}
+								<button 
+									type="button" 
+									class="p-2.5 px-5 rounded-2xl bg-base-100 hover:bg-base-300 border border-dashed border-base-300 transition-all text-left text-[10px] opacity-70 hover:opacity-100 italic hover:border-solid hover:shadow-md"
+									onclick={() => useCommitMessage(commit)}
+								>
+									"{commit}"
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 		{/if}
 
 		<!-- Form Fields -->
+
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 			<div class="form-control">
 				<label class="label pt-0" for="duty-title">
@@ -413,9 +615,25 @@
 			></textarea>
 		</div>
 
-		<div class="card-actions justify-end mt-10">
-			<button type="submit" class="btn btn-primary px-12 rounded-full font-black shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-transform uppercase tracking-widest gap-3">
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+		<div class="flex flex-col sm:flex-row items-center justify-between gap-6 mt-10 p-6 bg-base-200/50 rounded-[2rem] border border-base-300">
+			<div class="form-control">
+				<label class="label cursor-pointer gap-4">
+					<div class="flex flex-col text-left leading-tight">
+						<span class="text-xs font-black uppercase tracking-tight">Push to Git Commit</span>
+						<span class="text-[10px] opacity-50">Auto commit with Detail Code as message</span>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={includeGitCommit} disabled={!projectPath} />
+				</label>
+			</div>
+
+			<button 
+				type="submit" 
+				class="btn btn-primary px-12 rounded-full font-black shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-transform uppercase tracking-widest gap-3 w-full sm:w-auto {isCommitting ? 'loading' : ''}"
+				disabled={isCommitting}
+			>
+				{#if !isCommitting}
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+				{/if}
 				Add Ticket
 			</button>
 		</div>

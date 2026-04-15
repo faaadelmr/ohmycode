@@ -605,3 +605,213 @@ Cleaned up the 'Detail Code' auto-generation. It no longer inserts full diff sni
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Integrated Browser Git Commit
+
+**Date**: 2026-04-15
+**Task**: Integrated Browser Git Commit
+
+### Summary
+
+Added a toggle switch to the form that allows users to perform a real-time Git commit directly from the browser when adding a ticket. The 'Detail Code' content is used as the commit message, providing a seamless workflow between logging work and committing changes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 22: Undo Git Commit Integration
+
+**Date**: 2026-04-15
+**Task**: Undo Git Commit Integration
+
+### Summary
+
+Added a Git Undo feature. When a log entry is deleted, the system now asks if the user wants to undo the last Git commit associated with that task. If confirmed, it performs a 'git reset --soft HEAD~1', keeping the changes staged but removing the commit.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 23: Safe Git Undo with Error Handling
+
+**Date**: 2026-04-15
+**Task**: Safe Git Undo with Error Handling
+
+### Summary
+
+Refined the task deletion workflow to ensure Git operations are prioritized. The system now attempts the Git Undo first; if it fails, it warns the user and asks for confirmation before proceeding to delete the local log files. This prevents accidental loss of log data if Git is in an invalid state.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 24: Side-by-Side Git Staging & Detection
+
+**Date**: 2026-04-15
+**Task**: Side-by-Side Git Staging & Detection
+
+### Summary
+
+Revamped the Git Suggestions UI. Changes are now categorized into 'Staged Changes' (green) and 'Detected Changes' (yellow) side-by-side. Moved 'Recent History Context' to the bottom for better layout. This provides a professional Git-client feel directly within the work log form.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 25: Git Drag-and-Drop Staging
+
+**Date**: 2026-04-15
+**Task**: Git Drag-and-Drop Staging
+
+### Summary
+
+Implemented native Drag-and-Drop functionality for Git changes. Users can now move files between 'Detected Changes' and 'Staged Changes' columns. Dragging a file to Staged executes 'git add', and dragging it back executes 'git reset', providing a highly interactive Git workflow directly in the browser.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 26: Polished Git Drag-and-Drop Experience
+
+**Date**: 2026-04-15
+**Task**: Polished Git Drag-and-Drop Experience
+
+### Summary
+
+Enhanced the Git staging UI with smooth animations. Implemented Svelte's 'flip' animation for file movement and added optimistic UI updates for instant feedback. Included clearer drop-zone visual states (scaling, colors, and shadows) to make the Git staging process feel high-end and responsive.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 27: VS Code Style Dual Git Staging
+
+**Date**: 2026-04-15
+**Task**: VS Code Style Dual Git Staging
+
+### Summary
+
+Aligned the Git UI with VS Code behavior. A single file can now appear in both Staged and Detected columns if it has partial staged changes. Dragging a file will now properly merge it into the target state (stage or reset) based on the current Git status.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

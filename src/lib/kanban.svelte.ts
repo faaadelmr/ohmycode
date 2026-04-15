@@ -78,14 +78,44 @@ function createKanbanStore() {
 				console.error('Failed to delete from local disk', e);
 			}
 		},
-		removeTask(id: string) {
-			const task = tasks.find((t) => t.id === id);
-			if (task) {
-				this.deleteFromLocal(task);
-				const index = tasks.indexOf(task);
-				tasks.splice(index, 1);
-				save();
+		async undoGitCommit(projectPath: string) {
+			try {
+				const res = await fetch('/api/git', {
+					method: 'DELETE',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ projectPath })
+				});
+				return await res.json();
+			} catch (e) {
+				console.error('Failed to undo git commit', e);
+				return { success: false, error: 'API Connection failed' };
 			}
+		},
+		async removeTask(id: string) {
+			const task = tasks.find((t) => t.id === id);
+			if (!task) return;
+
+			// 1. If Git undo is needed, do it FIRST
+			if (task.projectPath) {
+				const shouldUndoGit = confirm('Do you also want to UNDO the last Git commit associated with this task?\n\n(This will perform a git reset --soft HEAD~1)');
+				
+				if (shouldUndoGit) {
+					const res = await this.undoGitCommit(task.projectPath);
+					if (!res.success) {
+						const proceed = confirm(`Git Undo Failed: ${res.error}\n\nDo you still want to delete the log entry anyway?`);
+						if (!proceed) return; // User cancelled the whole deletion
+					}
+				}
+			} else {
+				// Standard confirmation for non-project tasks
+				if (!confirm('Are you sure you want to delete this duty?')) return;
+			}
+
+			// 2. ONLY if step 1 succeeded or was skipped, proceed to delete from disk and state
+			await this.deleteFromLocal(task);
+			const index = tasks.indexOf(task);
+			tasks.splice(index, 1);
+			save();
 		}
 	};
 }
