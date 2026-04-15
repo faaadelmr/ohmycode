@@ -1,13 +1,12 @@
 import { browser } from '$app/environment';
 
-export type TaskStatus = 'todo' | 'inprogress' | 'done';
-
 export interface DutyTask {
 	id: string;
 	title: string;
+	description?: string;
+	notes?: string;
 	files: string[];
 	functions: string[];
-	status: TaskStatus;
 	createdAt: number;
 }
 
@@ -38,24 +37,18 @@ function createKanbanStore() {
 		get tasks() {
 			return tasks;
 		},
-		addTask(title: string, files: string[], functions: string[]) {
+		addTask(title: string, files: string[], functions: string[], description?: string, notes?: string) {
 			const newTask: DutyTask = {
 				id: crypto.randomUUID(),
 				title,
+				description,
+				notes,
 				files,
 				functions,
-				status: 'todo',
 				createdAt: Date.now()
 			};
-			tasks.push(newTask);
+			tasks.unshift(newTask); // Newest first
 			save();
-		},
-		updateTaskStatus(id: string, status: TaskStatus) {
-			const task = tasks.find((t) => t.id === id);
-			if (task) {
-				task.status = status;
-				save();
-			}
 		},
 		removeTask(id: string) {
 			const index = tasks.findIndex((t) => t.id === id);

@@ -11,6 +11,9 @@
 # after running add_session.py
 session_commit_message: "chore: record journal"
 
+# Set to true to disable automatic Git commits by Trellis scripts
+disable_auto_commit: true
+
 # Maximum lines per journal file before rotating to a new one
 max_journal_lines: 2000
 

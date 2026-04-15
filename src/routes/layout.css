@@ -1,6 +1,46 @@
 @import "tailwindcss";
+@import "daisyui/themes";
 
 @plugin "daisyui";
+
+/* Explicitly enable all themes for DaisyUI 5 / Tailwind 4 */
+@theme {
+  --theme-light: "light";
+  --theme-dark: "dark";
+  --theme-cupcake: "cupcake";
+  --theme-bumblebee: "bumblebee";
+  --theme-emerald: "emerald";
+  --theme-corporate: "corporate";
+  --theme-synthwave: "synthwave";
+  --theme-retro: "retro";
+  --theme-cyberpunk: "cyberpunk";
+  --theme-valentine: "valentine";
+  --theme-halloween: "halloween";
+  --theme-garden: "garden";
+  --theme-forest: "forest";
+  --theme-aqua: "aqua";
+  --theme-lofi: "lofi";
+  --theme-pastel: "pastel";
+  --theme-fantasy: "fantasy";
+  --theme-wireframe: "wireframe";
+  --theme-black: "black";
+  --theme-luxury: "luxury";
+  --theme-dracula: "dracula";
+  --theme-cmyk: "cmyk";
+  --theme-autumn: "autumn";
+  --theme-business: "business";
+  --theme-acid: "acid";
+  --theme-lemonade: "lemonade";
+  --theme-night: "night";
+  --theme-coffee: "coffee";
+  --theme-winter: "winter";
+  --theme-dim: "dim";
+  --theme-nord: "nord";
+  --theme-sunset: "sunset";
+  --theme-caramellatte: "caramellatte";
+  --theme-abyss: "abyss";
+  --theme-silk: "silk";
+}
 
 /* Custom theme overrides if needed */
 :root {

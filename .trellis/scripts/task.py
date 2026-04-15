@@ -62,7 +62,7 @@ from common.task_utils import (
     find_task_by_name,
     archive_task_complete,
 )
-from common.config import get_hooks
+from common.config import get_hooks, get_disable_auto_commit
 
 
 # =============================================================================
@@ -775,8 +775,8 @@ def cmd_archive(args: argparse.Namespace) -> int:
         year_month = archive_dest.parent.name
         print(colored(f"Archived: {dir_name} -> archive/{year_month}/", Colors.GREEN), file=sys.stderr)
 
-        # Auto-commit unless --no-commit
-        if not getattr(args, "no_commit", False):
+        # Auto-commit unless --no-commit OR disabled in config
+        if not getattr(args, "no_commit", False) and not get_disable_auto_commit(repo_root):
             _auto_commit_archive(dir_name, repo_root)
 
         # Return the archive path

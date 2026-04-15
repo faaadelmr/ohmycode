@@ -24,7 +24,11 @@ from common.paths import (
     get_workspace_dir,
 )
 from common.developer import ensure_developer
-from common.config import get_session_commit_message, get_max_journal_lines
+from common.config import (
+    get_session_commit_message,
+    get_max_journal_lines,
+    get_disable_auto_commit,
+)
 
 
 # =============================================================================
@@ -319,6 +323,10 @@ def add_session(
     if not dev_dir:
         print("Error: Workspace directory not found", file=sys.stderr)
         return 1
+
+    # Check global config for auto-commit
+    if get_disable_auto_commit(repo_root):
+        auto_commit = False
 
     max_lines = get_max_journal_lines(repo_root)
 

@@ -42,6 +42,16 @@ def get_session_commit_message(repo_root: Path | None = None) -> str:
     return config.get("session_commit_message", DEFAULT_SESSION_COMMIT_MESSAGE)
 
 
+def get_disable_auto_commit(repo_root: Path | None = None) -> bool:
+    """Check if automatic Git commits are disabled in config."""
+    config = _load_config(repo_root)
+    value = config.get("disable_auto_commit", False)
+    # Handle string "true"/"false" from simple yaml parser if needed
+    if isinstance(value, str):
+        return value.lower() == "true"
+    return bool(value)
+
+
 def get_max_journal_lines(repo_root: Path | None = None) -> int:
     """Get the maximum lines per journal file."""
     config = _load_config(repo_root)
