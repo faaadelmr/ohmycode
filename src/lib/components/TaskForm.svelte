@@ -366,18 +366,6 @@
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
 						Pick Folder
 					</button>
-
-					<button 
-						type="button" 
-						class="btn btn-ghost btn-sm btn-circle {isSyncing ? 'loading' : ''}" 
-						onclick={syncWithGit}
-						disabled={isSyncing || !projectPath}
-						title="Manual sync now"
-					>
-						{#if !isSyncing}
-							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
-						{/if}
-					</button>
 				</div>
 			</div>
 			
