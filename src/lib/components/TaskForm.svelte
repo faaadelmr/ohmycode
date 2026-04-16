@@ -71,10 +71,39 @@
 	let lastSyncTime = $state<string>('');
 	let fallbackInterval: any = null;
 
-	// UI feedback for drag
-	let isDragging = $state(false);
-	let overStaged = $state(false);
-	let overUnstaged = $state(false);
+	// ── Pointer-based drag state ───────────────────────────────────────
+	type DragState = {
+		file: string;
+		fromStaged: boolean;
+		startX: number; startY: number;
+		curX: number;   curY: number;
+		offsetX: number; offsetY: number;
+		cardW: number;  cardH: number;
+	};
+	let dragState   = $state<DragState | null>(null);
+	let dropTarget  = $state<'staged' | 'unstaged' | null>(null);
+	let droppedFile = $state<string | null>(null);
+
+	let stagedZoneEl   = $state<HTMLElement | undefined>(undefined);
+	let unstagedZoneEl = $state<HTMLElement | undefined>(undefined);
+
+	let isDraggingActive     = $derived(dragState !== null);
+	let dragHasMoved         = $derived(dragState !== null && (Math.abs(dragState.curX - dragState.startX) > 4 || Math.abs(dragState.curY - dragState.startY) > 4));
+	let isDraggingToStaged   = $derived(dragState !== null && !dragState.fromStaged && dropTarget === 'staged');
+	let isDraggingToUnstaged = $derived(dragState !== null &&  dragState.fromStaged && dropTarget === 'unstaged');
+
+	let stagedZoneClass = $derived(
+		!dragState               ? 'border-dashed border-base-300 bg-base-100/50' :
+		dragState.fromStaged     ? 'border-dashed border-base-300 bg-base-100/20 opacity-40' :
+		dropTarget === 'staged'  ? 'border-success bg-success/10 shadow-[0_0_40px_rgba(0,200,100,0.18)] scale-[1.02]' :
+		                           'border-dashed border-success/40 bg-success/5'
+	);
+	let unstagedZoneClass = $derived(
+		!dragState               ? 'border-dashed border-base-300 bg-base-100/50' :
+		!dragState.fromStaged    ? 'border-dashed border-base-300 bg-base-100/20 opacity-40' :
+		dropTarget === 'unstaged'? 'border-warning bg-warning/10 shadow-[0_0_40px_rgba(255,170,0,0.18)] scale-[1.02]' :
+		                           'border-dashed border-warning/40 bg-warning/5'
+	);
 
 	onMount(() => {
 		const savedPath = localStorage.getItem('last-project-path');
@@ -83,8 +112,15 @@
 			setupWatcher(savedPath);
 		}
 
+		document.addEventListener('pointermove',   onGlobalPointerMove, { passive: true });
+		document.addEventListener('pointerup',     onGlobalPointerUp);
+		document.addEventListener('pointercancel', onGlobalPointerUp);
+
 		return () => {
 			cleanupWatcher();
+			document.removeEventListener('pointermove',   onGlobalPointerMove);
+			document.removeEventListener('pointerup',     onGlobalPointerUp);
+			document.removeEventListener('pointercancel', onGlobalPointerUp);
 		};
 	});
 
@@ -556,33 +592,101 @@
 		description = `Context: ${msg}`;
 	};
 
-	// --- Drag and Drop Logic ---
-	const handleDragStart = (e: DragEvent, file: string, currentlyStaged: boolean) => {
-		isDragging = true;
-		if (e.dataTransfer) {
-			e.dataTransfer.setData('fileName', file);
-			e.dataTransfer.setData('fromStaged', currentlyStaged.toString());
-			e.dataTransfer.effectAllowed = 'move';
+	// ── Pointer-based Drag & Drop ──────────────────────────────────────
+
+	const onCardPointerDown = (e: PointerEvent, file: string, fromStaged: boolean) => {
+		if (e.button !== 0) return;
+		if ((e.target as HTMLElement).closest('button, input, a, textarea')) return;
+		e.preventDefault();
+
+		const cardEl = e.currentTarget as HTMLElement;
+		const rect   = cardEl.getBoundingClientRect();
+
+		dragState = {
+			file, fromStaged,
+			startX: e.clientX, startY: e.clientY,
+			curX:   e.clientX, curY:   e.clientY,
+			offsetX: e.clientX - rect.left,
+			offsetY: e.clientY - rect.top,
+			cardW: rect.width,
+			cardH: rect.height,
+		};
+
+		document.body.style.userSelect = 'none';
+		document.body.style.cursor     = 'grabbing';
+	};
+
+	const onGlobalPointerMove = (e: PointerEvent) => {
+		if (!dragState) return;
+		dragState = { ...dragState, curX: e.clientX, curY: e.clientY };
+
+		if (!stagedZoneEl || !unstagedZoneEl) { dropTarget = null; return; }
+
+		const sr = stagedZoneEl.getBoundingClientRect();
+		const ur = unstagedZoneEl.getBoundingClientRect();
+
+		if (e.clientX >= sr.left && e.clientX <= sr.right && e.clientY >= sr.top && e.clientY <= sr.bottom) {
+			dropTarget = 'staged';
+		} else if (e.clientX >= ur.left && e.clientX <= ur.right && e.clientY >= ur.top && e.clientY <= ur.bottom) {
+			dropTarget = 'unstaged';
+		} else {
+			dropTarget = null;
 		}
 	};
 
-	const handleDragEnd = () => {
-		isDragging = false;
-		overStaged = false;
-		overUnstaged = false;
+	const onGlobalPointerUp = async () => {
+		if (!dragState) return;
+
+		document.body.style.userSelect = '';
+		document.body.style.cursor     = '';
+
+		const { file, fromStaged } = dragState;
+		const target = dropTarget;
+
+		dragState  = null;
+		dropTarget = null;
+
+		const toStaged   = target === 'staged';
+		const shouldMove = target !== null && toStaged !== fromStaged;
+		if (!shouldMove) return;
+
+		if (toStaged) {
+			const idx = suggestions.findIndex(s => s.file === file);
+			if (idx !== -1) {
+				const item = suggestions[idx];
+				suggestions.splice(idx, 1);
+				stagedChanges.push({ ...item, isStaged: true });
+			}
+		} else {
+			const idx = stagedChanges.findIndex(s => s.file === file);
+			if (idx !== -1) {
+				const item = stagedChanges[idx];
+				stagedChanges.splice(idx, 1);
+				suggestions.push({ ...item, isStaged: false });
+			}
+		}
+
+		droppedFile = file;
+		setTimeout(() => { if (droppedFile === file) droppedFile = null; }, 700);
+
+		try {
+			await fetch('/api/git', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ projectPath, file, stage: toStaged })
+			});
+			// Watcher handles the sync
+		} catch {
+			syncWithGit();
+		}
 	};
 
-	const handleDrop = async (e: DragEvent, dropToStaged: boolean) => {
-		e.preventDefault();
-		handleDragEnd();
+	const moveFile = async (e: MouseEvent, fileName: string, toStaged: boolean) => {
+		e.stopPropagation();
+		if (!projectPath) return;
 
-		const fileName = e.dataTransfer?.getData('fileName');
-		const fromStaged = e.dataTransfer?.getData('fromStaged') === 'true';
-
-		if (!fileName || fromStaged === dropToStaged || !projectPath) return;
-
-		// Optimistic Update
-		if (dropToStaged) {
+		// Optimistic UI update
+		if (toStaged) {
 			const idx = suggestions.findIndex(s => s.file === fileName);
 			if (idx !== -1) {
 				const item = suggestions[idx];
@@ -602,10 +706,10 @@
 			await fetch('/api/git', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ projectPath, file: fileName, stage: dropToStaged })
+				body: JSON.stringify({ projectPath, file: fileName, stage: toStaged })
 			});
-			syncWithGit();
-		} catch (err) {
+			// Watcher handles the sync
+		} catch {
 			syncWithGit();
 		}
 	};
@@ -779,10 +883,7 @@
 					<div
 						class="flex flex-col h-full"
 						role="region"
-						aria-label="Staged Changes Dropzone"
-						ondrop={(e) => handleDrop(e, true)}
-						ondragover={(e) => { e.preventDefault(); overStaged = true; }}
-						ondragleave={() => overStaged = false}
+						aria-label="Staged Changes"
 					>
 						<div class="flex justify-between items-center mb-5 px-2">
 							<h3 class="text-xs font-black uppercase tracking-widest text-success flex items-center gap-2">
@@ -791,21 +892,25 @@
 							</h3>
 							<span class="badge badge-sm badge-success font-black bg-success/20 text-success border-none px-3">{stagedChanges.length}</span>
 						</div>
-						<div class="flex flex-col gap-3 min-h-[150px] bg-base-100/50 rounded-3xl p-3 border-2 border-dashed transition-all {overStaged ? 'border-success bg-success/5 scale-[1.02] shadow-xl' : 'border-base-300'}">
+						<div bind:this={stagedZoneEl} class="flex flex-col gap-3 min-h-[150px] rounded-3xl p-3 border-2 transition-all duration-200 {stagedZoneClass}">
 							{#each stagedChanges as s, i (s.id)}
 								<div
-									animate:flip={{ duration: 400 }}
+									animate:flip={{ duration: 250 }}
 									class="flex flex-col gap-1"
-									draggable="true"
 									role="listitem"
 									aria-label="Staged file {s.file}"
-									ondragstart={(e) => handleDragStart(e, s.file, true)}
-									ondragend={handleDragEnd}
 								>
+									{#if dragState?.file === s.file && dragState?.fromStaged === true && dragHasMoved}
+										<div class="h-[60px] rounded-2xl border-2 border-dashed border-primary/30 bg-primary/5" in:fade={{ duration: 120 }}></div>
+									{:else}
 									<div
 										role="button"
 										tabindex="0"
-										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border cursor-grab active:cursor-grabbing {s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}"
+										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border select-none cursor-grab active:cursor-grabbing
+											{s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}
+											{droppedFile === s.file ? 'ring-2 ring-success ring-offset-2 ring-offset-base-100' : ''}"
+										style="touch-action: none;"
+										onpointerdown={(e) => onCardPointerDown(e, s.file, true)}
 										onclick={() => toggleSelection(i, true)}
 										onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, true)}
 									>
@@ -825,10 +930,21 @@
 												{/if}
 											</div>
 										</div>
-										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, true)} title="Toggle Diff">
-											<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
-										</button>
+										<div class="flex flex-col items-center gap-0.5">
+											<button
+												type="button"
+												class="btn btn-xs btn-ghost btn-circle text-error hover:bg-error/10"
+												onclick={(e) => moveFile(e, s.file, false)}
+												title="Unstage file"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+											</button>
+											<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, true)} title="Toggle Diff">
+												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
+											</button>
+										</div>
 									</div>
+									{/if}
 									{#if s.showDiff && s.diff}
 										{#if editingDiffId === s.id}
 											<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
@@ -901,10 +1017,7 @@
 					<div
 						class="flex flex-col h-full"
 						role="region"
-						aria-label="Detected Changes Dropzone"
-						ondrop={(e) => handleDrop(e, false)}
-						ondragover={(e) => { e.preventDefault(); overUnstaged = true; }}
-						ondragleave={() => overUnstaged = false}
+						aria-label="Detected Changes"
 					>
 						<div class="flex justify-between items-center mb-5 px-2">
 							<h3 class="text-xs font-black uppercase tracking-widest text-warning flex items-center gap-2">
@@ -913,21 +1026,25 @@
 							</h3>
 							<span class="badge badge-sm badge-warning font-black bg-warning/20 text-warning border-none px-3">{suggestions.length}</span>
 						</div>
-						<div class="flex flex-col gap-3 min-h-[150px] bg-base-100/50 rounded-3xl p-3 border-2 border-dashed transition-all {overUnstaged ? 'border-warning bg-warning/5 scale-[1.02] shadow-xl' : 'border-base-300'}">
+						<div bind:this={unstagedZoneEl} class="flex flex-col gap-3 min-h-[150px] rounded-3xl p-3 border-2 transition-all duration-200 {unstagedZoneClass}">
 							{#each suggestions as s, i (s.id)}
 								<div
-									animate:flip={{ duration: 400 }}
+									animate:flip={{ duration: 250 }}
 									class="flex flex-col gap-1"
-									draggable="true"
 									role="listitem"
 									aria-label="Unstaged file {s.file}"
-									ondragstart={(e) => handleDragStart(e, s.file, false)}
-									ondragend={handleDragEnd}
 								>
+									{#if dragState?.file === s.file && dragState?.fromStaged === false && dragHasMoved}
+										<div class="h-[60px] rounded-2xl border-2 border-dashed border-primary/30 bg-primary/5" in:fade={{ duration: 120 }}></div>
+									{:else}
 									<div
 										role="button"
 										tabindex="0"
-										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border cursor-grab active:cursor-grabbing {s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}"
+										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border select-none cursor-grab active:cursor-grabbing
+											{s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}
+											{droppedFile === s.file ? 'ring-2 ring-success ring-offset-2 ring-offset-base-100' : ''}"
+										style="touch-action: none;"
+										onpointerdown={(e) => onCardPointerDown(e, s.file, false)}
 										onclick={() => toggleSelection(i, false)}
 										onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, false)}
 									>
@@ -947,10 +1064,21 @@
 												{/if}
 											</div>
 										</div>
-										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} title="Toggle Diff">
-											<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
-										</button>
+										<div class="flex flex-col items-center gap-0.5">
+											<button
+												type="button"
+												class="btn btn-xs btn-ghost btn-circle text-success hover:bg-success/10"
+												onclick={(e) => moveFile(e, s.file, true)}
+												title="Stage file"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+											</button>
+											<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} title="Toggle Diff">
+												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
+											</button>
+										</div>
 									</div>
+									{/if}
 									{#if s.showDiff && s.diff}
 										{#if editingDiffId === s.id}
 											<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
@@ -1152,6 +1280,31 @@
 		</div>
 	</form>
 </div>
+
+<!-- ── Drag Ghost ─────────────────────────────────────────────────────── -->
+{#if dragState && dragHasMoved}
+	<div
+		class="pointer-events-none fixed top-0 left-0 z-[9999] select-none"
+		style="transform: translate({dragState.curX - dragState.offsetX}px, {dragState.curY - dragState.offsetY}px) rotate(2.5deg) scale(1.06); will-change: transform; width: {dragState.cardW}px;"
+	>
+		<div class="bg-base-100 rounded-2xl px-4 py-3 border-2 border-primary shadow-[0_24px_60px_rgba(0,0,0,0.28),0_2px_8px_rgba(0,0,0,0.12)]">
+			<div class="flex items-center gap-2 mb-1">
+				<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse shrink-0"></span>
+				<span class="font-mono text-xs font-bold truncate">{dragState.file.split(/[/\\]/).pop()}</span>
+			</div>
+			<div class="font-mono text-[9px] opacity-40 truncate mb-1">{dragState.file}</div>
+			<div class="text-[9px] font-black uppercase tracking-widest opacity-50 flex items-center gap-1">
+				{#if dragState.fromStaged}
+					<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+					move to detected
+				{:else}
+					<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+					move to staged
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.custom-scrollbar::-webkit-scrollbar {

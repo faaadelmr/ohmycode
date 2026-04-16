@@ -53,7 +53,7 @@ export const GET: RequestHandler = ({ url }) => {
 					clearTimeout(debounceTimer);
 					debounceTimer = setTimeout(() => {
 						emit('change', JSON.stringify({ event, filename, time: Date.now() }));
-					}, 3000); // 300ms debounce
+					}, 300); // 300ms debounce
 				});
 			} catch (e) {
 				console.error('[Watcher] Error:', e);
