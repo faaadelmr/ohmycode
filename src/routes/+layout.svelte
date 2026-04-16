@@ -8,20 +8,7 @@
 	let { children } = $props();
 
 	onMount(() => {
-		// Initialize viewport normalization
 		normalizeViewport();
-
-		// Initial theme sync
-		const savedTheme = localStorage.getItem('theme') || 'cupcake';
-		theme.set(savedTheme);
-	});
-
-	// Reactive theme sync
-	$effect(() => {
-		if (typeof document !== 'undefined') {
-			document.documentElement.setAttribute('data-theme', $theme);
-			localStorage.setItem('theme', $theme);
-		}
 	});
 </script>
 
@@ -64,7 +51,7 @@
 					<div class="px-4 py-2 text-[10px] font-black uppercase opacity-40 tracking-widest">Select Theme</div>
 					{#each themes as t}
 						<li>
-							<button 
+							<button
 								class="rounded-xl flex justify-between items-center mb-1 { $theme === t ? 'active bg-primary text-primary-content' : '' }"
 								onclick={() => theme.set(t)}
 							>
