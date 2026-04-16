@@ -10,6 +10,7 @@ export interface DutyTask {
 	fileDiffs?: Record<string, string>;
 	projectPath?: string;
 	createdAt: number;
+	logFolderName?: string;
 }
 
 const STORAGE_KEY = 'ohmycode-kanban-tasks';
@@ -39,7 +40,15 @@ function createKanbanStore() {
 		get tasks() {
 			return tasks;
 		},
-		addTask(title: string, files: string[], functions: string[], description?: string, notes?: string, projectPath?: string, fileDiffs?: Record<string, string>): DutyTask {
+		addTask(
+			title: string,
+			files: string[],
+			functions: string[],
+			description?: string,
+			notes?: string,
+			projectPath?: string,
+			fileDiffs?: Record<string, string>
+		): DutyTask {
 			const newTask: DutyTask = {
 				id: crypto.randomUUID(),
 				title,
@@ -58,11 +67,21 @@ function createKanbanStore() {
 		async syncToLocal(task: DutyTask, projectPath: string) {
 			if (!projectPath) return;
 			try {
-				await fetch('/api/log/save', {
+				const res = await fetch('/api/log/save', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ task, projectPath })
 				});
+				const data = await res.json();
+				// Store the generated folder name back into the task so
+				// delete and download can locate the exact folder later.
+				if (data.success && data.folderName) {
+					const idx = tasks.findIndex((t) => t.id === task.id);
+					if (idx !== -1) {
+						tasks[idx] = { ...tasks[idx], logFolderName: data.folderName };
+						save();
+					}
+				}
 			} catch (e) {
 				console.error('Failed to sync to local disk', e);
 			}
@@ -97,12 +116,16 @@ function createKanbanStore() {
 
 			// 1. If Git undo is needed, do it FIRST
 			if (task.projectPath) {
-				const shouldUndoGit = confirm('Do you also want to UNDO the last Git commit associated with this task?\n\n(This will perform a git reset --soft HEAD~1)');
-				
+				const shouldUndoGit = confirm(
+					'Do you also want to UNDO the last Git commit associated with this task?\n\n(This will perform a git reset --soft HEAD~1)'
+				);
+
 				if (shouldUndoGit) {
 					const res = await this.undoGitCommit(task.projectPath);
 					if (!res.success) {
-						const proceed = confirm(`Git Undo Failed: ${res.error}\n\nDo you still want to delete the log entry anyway?`);
+						const proceed = confirm(
+							`Git Undo Failed: ${res.error}\n\nDo you still want to delete the log entry anyway?`
+						);
 						if (!proceed) return; // User cancelled the whole deletion
 					}
 				}

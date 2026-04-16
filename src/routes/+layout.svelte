@@ -4,8 +4,10 @@
 	import { theme, themes } from '$lib/theme';
 	import { onMount } from 'svelte';
 	import { normalizeViewport } from '@faaadelmr/css-viewport';
+	import SettingsModal from '$lib/components/SettingsModal.svelte';
 
 	let { children } = $props();
+	let showSettings = $state(false);
 
 	onMount(() => {
 		normalizeViewport();
@@ -40,6 +42,17 @@
 		</div>
 
 		<div class="navbar-end gap-2">
+			<!-- Settings Button -->
+			<button
+				class="btn btn-ghost btn-sm sm:btn-md gap-2 normal-case rounded-full border-base-300"
+				onclick={() => (showSettings = true)}
+				aria-label="Open settings"
+				title="Settings"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-block h-5 w-5 stroke-current"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+				<span class="hidden md:inline font-bold">Settings</span>
+			</button>
+
 			<!-- Theme Controller (DaisyUI Select Style) -->
 			<div class="dropdown dropdown-end">
 				<div tabindex="0" role="button" class="btn btn-ghost btn-sm sm:btn-md gap-2 normal-case rounded-full border-base-300">
@@ -70,6 +83,8 @@
 	<main class="py-8 sm:py-12">
 		{@render children()}
 	</main>
+
+	<SettingsModal bind:open={showSettings} />
 
 	<footer class="footer footer-center p-10 bg-base-200 text-base-content rounded border-t border-base-300">
 		<aside>

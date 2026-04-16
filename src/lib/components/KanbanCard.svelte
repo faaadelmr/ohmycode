@@ -14,8 +14,12 @@
 
 	const downloadFile = (file: string) => {
 		if (!task.projectPath) return;
-		const url = `/api/log/download?projectPath=${encodeURIComponent(task.projectPath)}&createdAt=${task.createdAt}&file=${encodeURIComponent(file)}`;
-		window.open(url, '_blank');
+		const params = new URLSearchParams({
+			projectPath: task.projectPath,
+			file,
+			...(task.logFolderName ? { logFolder: task.logFolderName } : { createdAt: String(task.createdAt) })
+		});
+		window.open(`/api/log/download?${params}`, '_blank');
 	};
 
 	const toggleFileDiff = (file: string) => {
@@ -31,7 +35,7 @@
 	}));
 </script>
 
-<div 
+<div
 	class="card bg-base-100 border border-base-300 shadow-sm hover:shadow-lg transition-all group p-6 mb-5 rounded-[2rem] overflow-hidden relative"
 >
 	<!-- Accent Decoration -->
@@ -47,8 +51,8 @@
 				{formattedDate}
 			</div>
 		</div>
-		<button 
-			class="btn btn-ghost btn-sm btn-circle text-error opacity-0 group-hover:opacity-100 transition-all hover:bg-error/10" 
+		<button
+			class="btn btn-ghost btn-sm btn-circle text-error opacity-0 group-hover:opacity-100 transition-all hover:bg-error/10"
 			onclick={removeTask}
 			title="Remove task"
 		>
@@ -82,7 +86,7 @@
 					{#each task.files as file}
 						<div class="flex flex-col gap-1">
 							<div class="flex items-center gap-2">
-								<button 
+								<button
 									type="button"
 									class="badge badge-sm badge-outline font-mono text-[10px] py-3 px-3 rounded-lg border-base-300 bg-base-100/50 hover:bg-primary hover:text-primary-content hover:border-primary transition-all cursor-pointer group/file flex items-center gap-1.5 flex-1 justify-start overflow-hidden"
 									onclick={() => downloadFile(file)}
@@ -91,10 +95,10 @@
 									<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="opacity-0 group-hover/file:opacity-100 transition-opacity shrink-0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
 									<span class="truncate">{file}</span>
 								</button>
-								
+
 								{#if task.fileDiffs && task.fileDiffs[file]}
-									<button 
-										class="btn btn-xs btn-ghost btn-circle" 
+									<button
+										class="btn btn-xs btn-ghost btn-circle"
 										onclick={() => toggleFileDiff(file)}
 										title="View code changes"
 									>

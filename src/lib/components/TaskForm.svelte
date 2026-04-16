@@ -10,10 +10,10 @@
 	let filesInput = $state('');
 	let functionsInput = $state('');
 	let projectPath = $state('');
-	
+
 	// Git Commit Switch
 	let includeGitCommit = $state(false);
-	
+
 	// Folder Browser State
 	let isSyncing = $state(false);
 	let isPicking = $state(false);
@@ -105,10 +105,10 @@
 		if (!path) return;
 
 		watcherStatus = 'connecting';
-		
+
 		// 1. Primary: EventSource (SSE)
 		eventSource = new EventSource(`/api/git/watch?path=${encodeURIComponent(path)}`);
-		
+
 		eventSource.onopen = () => {
 			console.log('[Watcher] SSE Connected');
 			watcherStatus = 'live';
@@ -166,7 +166,7 @@
 
 	const syncWithGit = async () => {
 		if (!projectPath.trim()) return;
-		
+
 		isSyncing = true;
 		try {
 			const res = await fetch(`/api/git?path=${encodeURIComponent(projectPath)}`);
@@ -419,6 +419,111 @@
 		}
 	};
 
+	// Conventional Commits inference
+	// Spec: https://www.conventionalcommits.org/
+
+	const CC_TYPES: Record<string, { label: string; color: string }> = {
+		feat:     { label: 'feat',     color: 'bg-primary/15 text-primary border-primary/30' },
+		fix:      { label: 'fix',      color: 'bg-error/15 text-error border-error/30' },
+		refactor: { label: 'refactor', color: 'bg-secondary/15 text-secondary border-secondary/30' },
+		docs:     { label: 'docs',     color: 'bg-info/15 text-info border-info/30' },
+		test:     { label: 'test',     color: 'bg-warning/15 text-warning border-warning/30' },
+		style:    { label: 'style',    color: 'bg-accent/15 text-accent border-accent/30' },
+		perf:     { label: 'perf',     color: 'bg-success/15 text-success border-success/30' },
+		chore:    { label: 'chore',    color: 'bg-base-content/10 text-base-content/50 border-base-300' },
+		build:    { label: 'build',    color: 'bg-base-content/10 text-base-content/50 border-base-300' },
+		ci:       { label: 'ci',       color: 'bg-base-content/10 text-base-content/50 border-base-300' },
+	};
+
+	const getFileCommitType = (item: GitChangeItem): string =>
+		inferConventionalType([item]).type;
+
+	const ccBadgeClass = (type: string): string =>
+		CC_TYPES[type]?.color ?? CC_TYPES['chore'].color;
+
+	const inferConventionalType = (items: GitChangeItem[]): { type: string; scope: string; summary: string } => {
+		const files = items.map(s => s.file.toLowerCase());
+		const types = items.map(s => s.type.toLowerCase());
+
+		// --- File-pattern detection ---
+		const isTest = files.some(f =>
+			/\.(test|spec)\.[jt]sx?$/.test(f) ||
+			/\/(tests?|__tests?__)\//i.test(f)
+		);
+		const isDoc = files.some(f =>
+			/\.(md|mdx|rst|txt)$/.test(f) ||
+			/\/docs?\//i.test(f)
+		);
+		const isCi = files.some(f =>
+			/\/(\.github|\.circleci|\.gitlab)\//i.test(f) ||
+			/dockerfile/i.test(f) ||
+			/\.github\/workflows\//i.test(f)
+		);
+		const isBuild = files.some(f =>
+			/(webpack|vite|rollup|esbuild|babel)\.config/.test(f) ||
+			/\.(npmrc|nvmrc)$/.test(f) ||
+			/^package\.json$/.test(f.split(/[/\\]/).pop() ?? '')
+		);
+		const isConfig = files.some(f =>
+			/\.(yaml|yml|toml|env|ini|cfg)$/.test(f) ||
+			/(\.eslintrc|\.prettierrc|tsconfig|svelte\.config|tailwind\.config)/.test(f) ||
+			/^\./.test(f.split(/[/\\]/).pop() ?? '')
+		);
+		const isStyle = files.some(f => /\.(css|scss|sass|less|styl)$/.test(f));
+		const isPerf = files.some(f => /(perf|performance|optim|bench)/i.test(f));
+
+		// --- Change-type detection ---
+		const hasAdded = types.some(t => t.includes('added') || t.includes('new'));
+		const hasDeleted = types.some(t => t.includes('deleted'));
+		const hasModified = types.some(t => t.includes('modified'));
+		const hasRenamed = types.some(t => t.includes('renamed'));
+
+		// --- Scope: nearest common parent dir ---
+		const scope = (() => {
+			if (items.length === 1) {
+				const parts = items[0].file.split(/[/\\]/);
+				return parts.length > 1 ? parts[parts.length - 2] : '';
+			}
+			const allParts = items.map(s => s.file.split(/[/\\]/).slice(0, -1));
+			const shortest = allParts.reduce((a, b) => (a.length <= b.length ? a : b));
+			let common = '';
+			for (let i = 0; i < shortest.length; i++) {
+				if (allParts.every(p => p[i] === shortest[i])) common = shortest[i];
+				else break;
+			}
+			return common;
+		})();
+
+		// --- Commit type (priority order) ---
+		let type: string;
+		if (isCi)                                    type = 'ci';
+		else if (isBuild)                            type = 'build';
+		else if (isDoc)                              type = 'docs';
+		else if (isTest)                             type = 'test';
+		else if (isStyle)                            type = 'style';
+		else if (isPerf)                             type = 'perf';
+		else if (isConfig)                           type = 'chore';
+		else if (hasRenamed)                         type = 'refactor';
+		else if (hasAdded && !hasModified)           type = 'feat';
+		else if (hasDeleted && !hasAdded && !hasModified) type = 'chore';
+		else if (hasModified)                        type = 'fix';
+		else                                         type = 'chore';
+
+		// --- Summary verb ---
+		const verb =
+			hasAdded && !hasModified ? 'add' :
+			hasDeleted && !hasAdded  ? 'remove' :
+			hasRenamed               ? 'rename' :
+			                           'update';
+
+		const summary =
+			items.length === 1
+				? `${verb} ${items[0].file.split(/[/\\]/).pop()}`
+				: `${verb} ${items.length} files`;
+
+		return { type, scope, summary };
+	};
+
 	const updateFormFromSelected = () => {
 		const selectedUnstaged = suggestions.filter(s => s.selected);
 		const selectedStaged = stagedChanges.filter(s => s.selected);
@@ -426,20 +531,23 @@
 
 		if (selected.length === 0) return;
 
+		const { type: ccType, scope, summary } = inferConventionalType(selected);
+		const scopePart = scope ? `(${scope})` : '';
+		const commitHeader = `${ccType}${scopePart}: ${summary}`;
+
 		if (selected.length === 1) {
 			const s = selected[0];
 			title = `${s.type}: ${s.file.split(/[/\\]/).pop()}`;
 			filesInput = s.file;
 			functionsInput = s.functions.join(', ');
 			description = `${s.type} in ${s.file}`;
-			notes = `${s.file} (+${s.stats.additions} -${s.stats.deletions})`;
+			notes = `${commitHeader}\n\n${s.file} (+${s.stats.additions} -${s.stats.deletions})`;
 		} else {
 			title = `Batch Update: ${selected.length} files`;
 			filesInput = selected.map(s => s.file).join(', ');
 			functionsInput = selected.flatMap(s => s.functions).filter((v, i, a) => a.indexOf(v) === i).join(', ');
 			description = `Working on ${selected.length} files: ${selected.map(s => s.file.split(/[/\\]/).pop()).join(', ')}`;
-			
-			notes = "Impacted files:\n" + 
+			notes = `${commitHeader}\n\nImpacted files:\n` +
 					selected.map(s => `- ${s.file} (+${s.stats.additions} -${s.stats.deletions})`).join('\n');
 		}
 	};
@@ -467,7 +575,7 @@
 	const handleDrop = async (e: DragEvent, dropToStaged: boolean) => {
 		e.preventDefault();
 		handleDragEnd();
-		
+
 		const fileName = e.dataTransfer?.getData('fileName');
 		const fromStaged = e.dataTransfer?.getData('fromStaged') === 'true';
 
@@ -529,7 +637,7 @@
 					body: JSON.stringify({
 						projectPath,
 						message: notes || description || title,
-						files: files.length > 0 ? files : null 
+						files: files.length > 0 ? files : null
 					})
 				});
 				const commitData = await commitRes.json();
@@ -551,7 +659,7 @@
 		}
 
 		const newTask = kanbanStore.addTask(title, files, functions, description, notes, projectPath, fileDiffs);
-		
+
 		if (projectPath) {
 			kanbanStore.syncToLocal(newTask, projectPath);
 		}
@@ -578,10 +686,10 @@
 						<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
 						Duty Dashboard
 					</h2>
-					
+
 					<!-- Watcher Status Indicator -->
 					{#if projectPath}
-						<div 
+						<div
 							class="badge badge-sm gap-1.5 py-3 px-3 font-bold uppercase text-[9px] border-none shadow-sm transition-colors duration-500 {watcherStatus === 'live' ? 'bg-success/10 text-success' : watcherStatus === 'connecting' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error'}"
 							title={watcherStatus === 'live' ? `Real-time monitoring active. Last sync: ${lastSyncTime}` : 'Connecting to project...'}
 						>
@@ -590,17 +698,17 @@
 						</div>
 					{/if}
 				</div>
-				
+
 				<div class="flex flex-wrap items-center gap-2">
 					{#if projectPath}
 						<div class="badge badge-outline gap-2 font-mono text-[10px] py-3 opacity-70 border-base-300">
 							{projectPath}
 						</div>
 					{/if}
-					
-					<button 
-						type="button" 
-						class="btn btn-primary btn-sm rounded-full gap-2 transition-transform hover:scale-105 active:scale-95" 
+
+					<button
+						type="button"
+						class="btn btn-primary btn-sm rounded-full gap-2 transition-transform hover:scale-105 active:scale-95"
 						onclick={() => openExplorer(projectPath)}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
@@ -608,7 +716,7 @@
 					</button>
 				</div>
 			</div>
-			
+
 			{#if errorMessage}
 				<div class="alert alert-error py-2 text-xs rounded-lg" transition:fade>
 					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -643,8 +751,8 @@
 
 						<div class="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 custom-scrollbar">
 							{#each explorerDirs as dir}
-								<button 
-									type="button" 
+								<button
+									type="button"
 									class="flex items-center gap-3 p-3 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors text-left group"
 									onclick={() => openExplorer(explorerPath + pathSep + dir)}
 								>
@@ -668,7 +776,7 @@
 			<div class="bg-base-200/50 rounded-[2.5rem] p-8 border border-base-300 mb-12 shadow-inner" transition:slide>
 				<div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
 					<!-- Staged Changes -->
-					<div 
+					<div
 						class="flex flex-col h-full"
 						role="region"
 						aria-label="Staged Changes Dropzone"
@@ -685,7 +793,7 @@
 						</div>
 						<div class="flex flex-col gap-3 min-h-[150px] bg-base-100/50 rounded-3xl p-3 border-2 border-dashed transition-all {overStaged ? 'border-success bg-success/5 scale-[1.02] shadow-xl' : 'border-base-300'}">
 							{#each stagedChanges as s, i (s.id)}
-								<div 
+								<div
 									animate:flip={{ duration: 400 }}
 									class="flex flex-col gap-1"
 									draggable="true"
@@ -694,7 +802,7 @@
 									ondragstart={(e) => handleDragStart(e, s.file, true)}
 									ondragend={handleDragEnd}
 								>
-									<div 
+									<div
 										role="button"
 										tabindex="0"
 										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border cursor-grab active:cursor-grabbing {s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}"
@@ -708,9 +816,13 @@
 											<span class="font-mono text-xs truncate font-bold">{s.file}</span>
 											<div class="flex items-center gap-2 mt-1">
 												<span class="text-[9px] font-black">
-													<span class="text-success">+{s.stats.additions}</span> 
+													<span class="text-success">+{s.stats.additions}</span>
 													<span class="text-error">-{s.stats.deletions}</span>
 												</span>
+												{#if !s.selected}
+													{@const ccType = getFileCommitType(s)}
+													<span class="badge badge-xs border font-black px-1.5 py-2 rounded-md {ccBadgeClass(ccType)}">{ccType}</span>
+												{/if}
 											</div>
 										</div>
 										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, true)} title="Toggle Diff">
@@ -786,7 +898,7 @@
 					</div>
 
 					<!-- Unstaged (Detected) Changes -->
-					<div 
+					<div
 						class="flex flex-col h-full"
 						role="region"
 						aria-label="Detected Changes Dropzone"
@@ -803,7 +915,7 @@
 						</div>
 						<div class="flex flex-col gap-3 min-h-[150px] bg-base-100/50 rounded-3xl p-3 border-2 border-dashed transition-all {overUnstaged ? 'border-warning bg-warning/5 scale-[1.02] shadow-xl' : 'border-base-300'}">
 							{#each suggestions as s, i (s.id)}
-								<div 
+								<div
 									animate:flip={{ duration: 400 }}
 									class="flex flex-col gap-1"
 									draggable="true"
@@ -812,7 +924,7 @@
 									ondragstart={(e) => handleDragStart(e, s.file, false)}
 									ondragend={handleDragEnd}
 								>
-									<div 
+									<div
 										role="button"
 										tabindex="0"
 										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border cursor-grab active:cursor-grabbing {s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}"
@@ -826,9 +938,13 @@
 											<span class="font-mono text-xs truncate font-bold">{s.file}</span>
 											<div class="flex items-center gap-2 mt-1">
 												<span class="text-[9px] font-black">
-													<span class="text-success">+{s.stats.additions}</span> 
+													<span class="text-success">+{s.stats.additions}</span>
 													<span class="text-error">-{s.stats.deletions}</span>
 												</span>
+												{#if !s.selected}
+													{@const ccType = getFileCommitType(s)}
+													<span class="badge badge-xs border font-black px-1.5 py-2 rounded-md {ccBadgeClass(ccType)}">{ccType}</span>
+												{/if}
 											</div>
 										</div>
 										<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} title="Toggle Diff">
@@ -913,8 +1029,8 @@
 						</h3>
 						<div class="flex flex-wrap gap-3">
 							{#each recentCommits as commit}
-								<button 
-									type="button" 
+								<button
+									type="button"
 									class="p-2.5 px-5 rounded-2xl bg-base-100 hover:bg-base-300 border border-dashed border-base-300 transition-all text-left text-[10px] opacity-70 hover:opacity-100 italic hover:border-solid hover:shadow-md"
 									onclick={() => useCommitMessage(commit)}
 								>
@@ -1023,8 +1139,8 @@
 				</label>
 			</div>
 
-			<button 
-				type="submit" 
+			<button
+				type="submit"
 				class="btn btn-primary px-12 rounded-full font-black shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-transform uppercase tracking-widest gap-3 w-full sm:w-auto {isCommitting ? 'loading' : ''}"
 				disabled={isCommitting}
 			>
