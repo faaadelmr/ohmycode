@@ -23,12 +23,47 @@
 	let explorerParent = $state('');
 	let explorerDirs = $state<string[]>([]);
 	let pathSep = $state('/');
-	
-	let suggestions = $state<{ id: string; file: string; functions: string[]; type: string; diff: string; stats: any; selected?: boolean; showDiff?: boolean }[]>([]);
-	let stagedChanges = $state<{ id: string; file: string; functions: string[]; type: string; diff: string; stats: any; selected?: boolean; showDiff?: boolean }[]>([]);
+
+	type GitChangeItem = {
+		id: string;
+		file: string;
+		functions: string[];
+		type: string;
+		diff: string;
+		stats: { additions: number; deletions: number };
+		isStaged?: boolean;
+		selected?: boolean;
+		showDiff?: boolean;
+	};
+
+	type EditingLine = {
+		number: number;
+		content: string;
+		isChanged: boolean;
+	};
+
+	type DiffEditorRow = {
+		key: string;
+		kind: 'hunk' | 'context' | 'add' | 'remove';
+		oldNumber: number | null;
+		newNumber: number | null;
+		content: string;
+		editable: boolean;
+	};
+
+	let suggestions = $state<GitChangeItem[]>([]);
+	let stagedChanges = $state<GitChangeItem[]>([]);
 	let recentCommits = $state<string[]>([]);
 	let errorMessage = $state('');
 	let successMessage = $state('');
+	let editingDiffId = $state<string | null>(null);
+	let editingFile = $state('');
+	let editingDraft = $state('');
+	let editingLines = $state<EditingLine[]>([]);
+	let editingRows = $state<DiffEditorRow[]>([]);
+	let editingError = $state('');
+	let loadingEditor = $state(false);
+	let savingEditor = $state(false);
 
 	// Real-time Watcher State
 	let eventSource: EventSource | null = null;
@@ -176,6 +211,211 @@
 			stagedChanges[index].showDiff = !stagedChanges[index].showDiff;
 		} else {
 			suggestions[index].showDiff = !suggestions[index].showDiff;
+		}
+	};
+
+	const getChangedLineNumbers = (diff: string) => {
+		const changedLines = new Set<number>();
+		const lines = diff.split('\n');
+
+		for (const line of lines) {
+			if (!line.startsWith('@@')) continue;
+
+			const match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+			if (!match) continue;
+
+			const start = Number(match[1]);
+			const length = Number(match[2] ?? '1');
+
+			for (let i = 0; i < Math.max(length, 1); i++) {
+				changedLines.add(start + i);
+			}
+		}
+
+		return changedLines;
+	};
+
+	const buildEditingLines = (content: string, diff: string) => {
+		const changedLines = getChangedLineNumbers(diff);
+		const sourceLines = content.split('\n');
+
+		return sourceLines.map((line, index) => ({
+			number: index + 1,
+			content: line,
+			isChanged: changedLines.has(index + 1)
+		}));
+	};
+
+	const buildDiffEditorRows = (diff: string) => {
+		const rows: DiffEditorRow[] = [];
+		const lines = diff.split('\n');
+		let rowIndex = 0;
+
+		let oldLine = 0;
+		let newLine = 0;
+
+		for (const line of lines) {
+			if (!line) continue;
+			if (line.startsWith('---') || line.startsWith('+++')) continue;
+
+			if (line.startsWith('@@')) {
+				const match = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+				if (!match) continue;
+
+				oldLine = Number(match[1]);
+				newLine = Number(match[2]);
+				rows.push({
+					key: `hunk-${rowIndex++}`,
+					kind: 'hunk',
+					oldNumber: null,
+					newNumber: null,
+					content: line,
+					editable: false
+				});
+				continue;
+			}
+
+			const prefix = line[0];
+			const content = line.slice(1);
+
+			if (prefix === ' ') {
+				rows.push({
+					key: `ctx-${rowIndex++}`,
+					kind: 'context',
+					oldNumber: oldLine,
+					newNumber: newLine,
+					content,
+					editable: false
+				});
+				oldLine++;
+				newLine++;
+				continue;
+			}
+
+			if (prefix === '+') {
+				rows.push({
+					key: `add-${rowIndex++}`,
+					kind: 'add',
+					oldNumber: null,
+					newNumber: newLine,
+					content,
+					editable: true
+				});
+				newLine++;
+				continue;
+			}
+
+			if (prefix === '-') {
+				rows.push({
+					key: `remove-${rowIndex++}`,
+					kind: 'remove',
+					oldNumber: oldLine,
+					newNumber: null,
+					content,
+					editable: false
+				});
+				oldLine++;
+			}
+		}
+
+		return rows;
+	};
+
+	const syncEditingDraft = () => {
+		editingDraft = editingLines.map((line) => line.content).join('\n');
+	};
+
+	const updateEditingLine = (index: number, value: string) => {
+		if (!editingLines[index]) return;
+		editingLines[index].content = value;
+		syncEditingDraft();
+	};
+
+	const updateEditingRow = (rowIndex: number, value: string) => {
+		const row = editingRows[rowIndex];
+		if (!row || !row.editable || row.newNumber === null) return;
+
+		row.content = value;
+		updateEditingLine(row.newNumber - 1, value);
+	};
+
+	const startInlineEdit = async (item: GitChangeItem) => {
+		if (!projectPath || item.type === 'Deleted' || loadingEditor || savingEditor) return;
+
+		editingDiffId = item.id;
+		editingFile = item.file;
+		editingError = '';
+		loadingEditor = true;
+
+		try {
+			const res = await fetch(
+				`/api/git/file?path=${encodeURIComponent(projectPath)}&file=${encodeURIComponent(item.file)}`
+			);
+			const data = await res.json();
+
+			if (!data.success) {
+				editingError = data.error || 'Failed to load file content';
+				return;
+			}
+
+			editingDraft = data.content ?? '';
+			const builtLines = buildEditingLines(editingDraft, item.diff);
+			editingLines = builtLines;
+			editingRows = buildDiffEditorRows(item.diff);
+		} catch (e) {
+			editingError = 'Failed to load file content';
+		} finally {
+			loadingEditor = false;
+		}
+	};
+
+	const cancelInlineEdit = () => {
+		if (savingEditor) return;
+
+		editingDiffId = null;
+		editingFile = '';
+		editingDraft = '';
+		editingLines = [];
+		editingRows = [];
+		editingError = '';
+		loadingEditor = false;
+	};
+
+	const saveInlineEdit = async () => {
+		if (!projectPath || !editingDiffId || !editingFile || savingEditor) return;
+
+		savingEditor = true;
+		editingError = '';
+
+		try {
+			const res = await fetch('/api/git/file', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					projectPath,
+					file: editingFile,
+					content: editingDraft
+				})
+			});
+			const data = await res.json();
+
+			if (!data.success) {
+				editingError = data.error || 'Failed to save file';
+				return;
+			}
+
+			const savedMessage = `Saved ${editingFile}`;
+			successMessage = savedMessage;
+			setTimeout(() => {
+				if (successMessage === savedMessage) successMessage = '';
+			}, 3000);
+
+			cancelInlineEdit();
+			await syncWithGit();
+		} catch (e) {
+			editingError = 'Failed to save file';
+		} finally {
+			savingEditor = false;
 		}
 	};
 
@@ -478,11 +718,61 @@
 										</button>
 									</div>
 									{#if s.showDiff && s.diff}
-										<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
-											{#each s.diff.split('\n') as line}
-												<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
-											{/each}
-										</div>
+										{#if editingDiffId === s.id}
+											<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
+												<div class="mb-2 flex justify-end gap-2 not-italic whitespace-normal">
+													<button type="button" class="btn btn-xs btn-primary rounded-full px-3" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
+														{savingEditor ? 'Saving...' : 'Save'}
+													</button>
+													<button type="button" class="btn btn-xs btn-ghost rounded-full px-3" onclick={cancelInlineEdit} disabled={savingEditor}>
+														Cancel
+													</button>
+												</div>
+												{#if editingError}
+													<div class="mb-3 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-[10px] text-error whitespace-normal">
+														{editingError}
+													</div>
+												{/if}
+												{#if loadingEditor}
+													<div class="px-1 text-[10px] opacity-60 whitespace-normal">Loading file content...</div>
+												{:else}
+													<div class="max-h-80 overflow-auto">
+														{#each editingRows as row, rowIndex (row.key)}
+															<div class="{row.kind === 'add' ? 'text-success bg-success/5' : row.kind === 'remove' ? 'text-error bg-error/5' : row.kind === 'context' ? 'opacity-50' : 'opacity-50'} px-1">
+																{#if row.kind === 'hunk'}
+																	<div>{row.content}</div>
+																{:else if row.editable}
+																	<div class="grid grid-cols-[10px_1fr] items-start gap-1">
+																		<span>{row.kind === 'add' ? '+' : ' '}</span>
+																		<input
+																			type="text"
+																			value={row.content}
+																			oninput={(e) => updateEditingRow(rowIndex, (e.currentTarget as HTMLInputElement).value)}
+																			class="min-w-0 border-0 bg-transparent p-0 font-mono text-[9px] leading-normal text-inherit focus:outline-none"
+																			spellcheck="false"
+																		/>
+																	</div>
+																{:else}
+																	<div>{row.kind === 'remove' ? `-${row.content}` : row.kind === 'context' ? ` ${row.content}` : row.content}</div>
+																{/if}
+															</div>
+														{/each}
+													</div>
+												{/if}
+											</div>
+										{:else}
+											<button
+												type="button"
+												class="mt-1 w-full overflow-x-auto whitespace-pre rounded-2xl border border-base-300 bg-base-300 p-4 text-left font-mono text-[9px] shadow-inner"
+												transition:slide
+												ondblclick={() => startInlineEdit(s)}
+												title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
+											>
+												{#each s.diff.split('\n') as line}
+													<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
+												{/each}
+											</button>
+										{/if}
 									{/if}
 								</div>
 							{/each}
@@ -546,11 +836,61 @@
 										</button>
 									</div>
 									{#if s.showDiff && s.diff}
-										<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
-											{#each s.diff.split('\n') as line}
-												<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
-											{/each}
-										</div>
+										{#if editingDiffId === s.id}
+											<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
+												<div class="mb-2 flex justify-end gap-2 not-italic whitespace-normal">
+													<button type="button" class="btn btn-xs btn-primary rounded-full px-3" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
+														{savingEditor ? 'Saving...' : 'Save'}
+													</button>
+													<button type="button" class="btn btn-xs btn-ghost rounded-full px-3" onclick={cancelInlineEdit} disabled={savingEditor}>
+														Cancel
+													</button>
+												</div>
+												{#if editingError}
+													<div class="mb-3 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-[10px] text-error whitespace-normal">
+														{editingError}
+													</div>
+												{/if}
+												{#if loadingEditor}
+													<div class="px-1 text-[10px] opacity-60 whitespace-normal">Loading file content...</div>
+												{:else}
+													<div class="max-h-80 overflow-auto">
+														{#each editingRows as row, rowIndex (row.key)}
+															<div class="{row.kind === 'add' ? 'text-success bg-success/5' : row.kind === 'remove' ? 'text-error bg-error/5' : row.kind === 'context' ? 'opacity-50' : 'opacity-50'} px-1">
+																{#if row.kind === 'hunk'}
+																	<div>{row.content}</div>
+																{:else if row.editable}
+																	<div class="grid grid-cols-[10px_1fr] items-start gap-1">
+																		<span>{row.kind === 'add' ? '+' : ' '}</span>
+																		<input
+																			type="text"
+																			value={row.content}
+																			oninput={(e) => updateEditingRow(rowIndex, (e.currentTarget as HTMLInputElement).value)}
+																			class="min-w-0 border-0 bg-transparent p-0 font-mono text-[9px] leading-normal text-inherit focus:outline-none"
+																			spellcheck="false"
+																		/>
+																	</div>
+																{:else}
+																	<div>{row.kind === 'remove' ? `-${row.content}` : row.kind === 'context' ? ` ${row.content}` : row.content}</div>
+																{/if}
+															</div>
+														{/each}
+													</div>
+												{/if}
+											</div>
+										{:else}
+											<button
+												type="button"
+												class="mt-1 w-full overflow-x-auto whitespace-pre rounded-2xl border border-base-300 bg-base-300 p-4 text-left font-mono text-[9px] shadow-inner"
+												transition:slide
+												ondblclick={() => startInlineEdit(s)}
+												title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
+											>
+												{#each s.diff.split('\n') as line}
+													<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
+												{/each}
+											</button>
+										{/if}
 									{/if}
 								</div>
 							{/each}

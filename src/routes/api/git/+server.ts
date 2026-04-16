@@ -74,8 +74,8 @@ export const GET: RequestHandler = async ({ url }) => {
 			if (change.type !== 'Deleted') {
 				try {
 					let diffCmd = change.isStaged 
-						? `git -C "${targetPath}" diff --cached -U0 "${change.file}"`
-						: `git -C "${targetPath}" diff -U0 "${change.file}"`;
+						? `git -C "${targetPath}" diff --cached -U3 "${change.file}"`
+						: `git -C "${targetPath}" diff -U3 "${change.file}"`;
 
 					if (change.status === '??' || (change.isStaged && change.status === 'A')) {
 						diffData = 'New file content...';
