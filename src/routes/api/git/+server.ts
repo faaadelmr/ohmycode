@@ -271,17 +271,25 @@ export const POST: RequestHandler = async ({ request }) => {
 		const tempMsgFile = path.join(os.tmpdir(), `ohmycode_commit_${Date.now()}.txt`);
 		fs.writeFileSync(tempMsgFile, message, 'utf8');
 		
+		const filesArgs =
+			files && files.length > 0 ? `-- ${files.map((f: string) => `"${f}"`).join(' ')}` : '';
+
 		try {
-			const commitOutput = execSync(`git -C "${projectPath}" commit --allow-empty --no-verify -F "${tempMsgFile}"`).toString();
+			const commitOutput = execSync(
+				`git -C "${projectPath}" commit --allow-empty --no-verify -F "${tempMsgFile}" ${filesArgs}`
+			).toString();
 			fs.unlinkSync(tempMsgFile);
 			return json({ success: true, output: commitOutput });
 		} catch (commitErr: any) {
 			if (fs.existsSync(tempMsgFile)) fs.unlinkSync(tempMsgFile);
-			return json({
-				success: false, 
-				error: 'Git commit failed.',
-				raw: commitErr.stdout?.toString() || commitErr.message
-			}, { status: 400 });
+			return json(
+				{
+					success: false,
+					error: 'Git commit failed.',
+					raw: commitErr.stdout?.toString() || commitErr.message
+				},
+				{ status: 400 }
+			);
 		}
 	} catch (error) {
 		console.error('Git Commit API Error:', error);

@@ -698,20 +698,22 @@
 
 		// Optimistic UI update
 		if (toStaged) {
-			const idx = suggestions.findIndex(s => s.file === fileName);
+			const idx = suggestions.findIndex((s) => s.file === fileName);
 			if (idx !== -1) {
 				const item = suggestions[idx];
 				suggestions.splice(idx, 1);
-				stagedChanges.push({ ...item, isStaged: true });
+				stagedChanges.push({ ...item, isStaged: true, selected: true });
 			}
 		} else {
-			const idx = stagedChanges.findIndex(s => s.file === fileName);
+			const idx = stagedChanges.findIndex((s) => s.file === fileName);
 			if (idx !== -1) {
 				const item = stagedChanges[idx];
 				stagedChanges.splice(idx, 1);
-				suggestions.push({ ...item, isStaged: false });
+				suggestions.push({ ...item, isStaged: false, selected: false });
 			}
 		}
+
+		updateFormFromSelected();
 
 		try {
 			await fetch('/api/git', {
@@ -730,7 +732,7 @@
 
 		// Optimistic UI update
 		if (toStaged) {
-			stagedChanges.push(...suggestions.map((s) => ({ ...s, isStaged: true, selected: false })));
+			stagedChanges.push(...suggestions.map((s) => ({ ...s, isStaged: true, selected: true })));
 			suggestions.length = 0;
 		} else {
 			suggestions.push(...stagedChanges.map((s) => ({ ...s, isStaged: false, selected: false })));
