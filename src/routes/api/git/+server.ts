@@ -64,49 +64,91 @@ export const GET: RequestHandler = async ({ url }) => {
 			}
 		});
 
+		const getDirectoryDiff = (dirPath: string, relativeRoot: string): { diff: string; additions: number } => {
+			let diff = '';
+			let additions = 0;
+
+			try {
+				const items = fs.readdirSync(dirPath);
+				for (const item of items) {
+					if (item === '.git' || item === 'node_modules' || item === '.svelte-kit') continue;
+					
+					const fullPath = path.join(dirPath, item);
+					const relPath = path.join(relativeRoot, item);
+					const stat = fs.lstatSync(fullPath);
+
+					if (stat.isDirectory()) {
+						const sub = getDirectoryDiff(fullPath, relPath);
+						diff += sub.diff;
+						additions += sub.additions;
+					} else if (stat.isFile()) {
+						try {
+							const content = fs.readFileSync(fullPath, 'utf8');
+							const dLines = content.split('\n');
+							diff += `\n--- ${relPath} ---\n`;
+							diff += dLines.map((l) => `+${l}`).join('\n') + '\n';
+							additions += dLines.length;
+						} catch (e) {}
+					}
+				}
+			} catch (e) {}
+			return { diff, additions };
+		};
+
 		const processSuggestion = (change: any) => {
 			let functions: string[] = [];
 			let diffData = '';
 			let diffStats = { additions: 0, deletions: 0 };
-			
+
 			const fullPath = path.resolve(targetPath, change.file);
-			
+
 			if (change.type !== 'Deleted') {
 				try {
-					let diffCmd = change.isStaged 
+					let diffCmd = change.isStaged
 						? `git -C "${targetPath}" diff --cached -U3 "${change.file}"`
 						: `git -C "${targetPath}" diff -U3 "${change.file}"`;
 
-					if (change.status === '??' || (change.isStaged && change.status === 'A')) {
+					if (
+						change.status === '?' ||
+						change.status === '??' ||
+						(change.isStaged && change.status === 'A')
+					) {
 						if (fs.existsSync(fullPath)) {
-							const content = fs.readFileSync(fullPath, 'utf8');
-							const dLines = content.split('\n');
-							diffData = dLines.map((l) => `+${l}`).join('\n');
-							diffStats.additions = dLines.length;
+							const stat = fs.lstatSync(fullPath);
+							if (stat.isDirectory()) {
+								const dirDiff = getDirectoryDiff(fullPath, change.file);
+								diffData = dirDiff.diff || 'New empty directory';
+								diffStats.additions = dirDiff.additions;
+							} else {
+								const content = fs.readFileSync(fullPath, 'utf8');
+								const dLines = content.split('\n');
+								diffData = dLines.map((l) => `+${l}`).join('\n');
+								diffStats.additions = dLines.length;
 
-							if (
-								fullPath.endsWith('.ts') ||
-								fullPath.endsWith('.js') ||
-								fullPath.endsWith('.svelte')
-							) {
-								const functionMatches = content.match(
-									/function\s+(\w+)|const\s+(\w+)\s*=\s*(\(.*?\)|.*?)\s*=>/g
-								);
-								if (functionMatches) {
-									functions = functionMatches
-										.map((m) => m.match(/(?:function\s+|const\s+)(\w+)/)?.[1])
-										.filter(
-											(n) =>
-												n &&
-												![
-													'onMount',
-													'onDestroy',
-													'$state',
-													'$derived',
-													'$props',
-													'$effect'
-												].includes(n)
-										) as string[];
+								if (
+									fullPath.endsWith('.ts') ||
+									fullPath.endsWith('.js') ||
+									fullPath.endsWith('.svelte')
+								) {
+									const functionMatches = content.match(
+										/function\s+(\w+)|const\s+(\w+)\s*=\s*(\(.*?\)|.*?)\s*=>/g
+									);
+									if (functionMatches) {
+										functions = functionMatches
+											.map((m) => m.match(/(?:function\s+|const\s+)(\w+)/)?.[1])
+											.filter(
+												(n) =>
+													n &&
+													![
+														'onMount',
+														'onDestroy',
+														'$state',
+														'$derived',
+														'$props',
+														'$effect'
+													].includes(n)
+											) as string[];
+									}
 								}
 							}
 						}
@@ -115,20 +157,24 @@ export const GET: RequestHandler = async ({ url }) => {
 						try {
 							diffData = execSync(diffCmd).toString();
 							const dLines = diffData.split('\n');
-							dLines.forEach(l => {
+							dLines.forEach((l) => {
 								if (l.startsWith('+') && !l.startsWith('+++')) diffStats.additions++;
 								if (l.startsWith('-') && !l.startsWith('---')) diffStats.deletions++;
 							});
 
-							dLines.filter(l => l.startsWith('@@')).forEach(header => {
-								const match = header.match(/@@.*@@\s+(?:.*?\s+)?(\w+)/);
-								if (match && match[1] && !/^\d+$/.test(match[1])) functions.push(match[1]);
-							});
+							dLines
+								.filter((l) => l.startsWith('@@'))
+								.forEach((header) => {
+									const match = header.match(/@@.*@@\s+(?:.*?\s+)?(\w+)/);
+									if (match && match[1] && !/^\d+$/.test(match[1])) functions.push(match[1]);
+								});
 
-							dLines.filter(l => l.startsWith('+') && !l.startsWith('+++')).forEach(l => {
-								const fMatch = l.match(/(?:function\s+|const\s+)(\w+)\s*=?\s*(?:\(|=)/);
-								if (fMatch && fMatch[1]) functions.push(fMatch[1]);
-							});
+							dLines
+								.filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+								.forEach((l) => {
+									const fMatch = l.match(/(?:function\s+|const\s+)(\w+)\s*=?\s*(?:\(|=)/);
+									if (fMatch && fMatch[1]) functions.push(fMatch[1]);
+								});
 						} catch (e) {}
 					}
 				} catch (e) {}
@@ -136,7 +182,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 			return {
 				...change,
-				functions: [...new Set(functions)].filter(f => f && f.length > 2).slice(0, 8),
+				functions: [...new Set(functions)].filter((f) => f && f.length > 2).slice(0, 8),
 				diff: diffData,
 				stats: diffStats
 			};
@@ -148,7 +194,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		let recentCommits: string[] = [];
 		try {
 			const logOutput = execSync(`git -C "${targetPath}" log -n 3 --oneline`).toString();
-			recentCommits = logOutput.split('\n').filter(l => l.trim() !== '');
+			recentCommits = logOutput.split('\n').filter((l) => l.trim() !== '');
 		} catch (e) {}
 
 		return json({
