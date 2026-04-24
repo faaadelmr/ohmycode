@@ -751,6 +751,38 @@
 		}
 	};
 
+	const discardChanges = async (fileName?: string) => {
+		if (!projectPath) return;
+
+		const isAll = !fileName;
+		const message = isAll
+			? 'Are you sure you want to discard ALL detected changes? This cannot be undone.'
+			: `Are you sure you want to discard changes to ${fileName}?`;
+
+		if (!confirm(message)) return;
+
+		try {
+			const res = await fetch('/api/git/discard', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ projectPath, file: fileName, all: isAll })
+			});
+			const data = await res.json();
+			if (data.success) {
+				if (isAll) {
+					suggestions = [];
+				} else {
+					suggestions = suggestions.filter((s) => s.file !== fileName);
+				}
+				updateFormFromSelected();
+			} else {
+				errorMessage = `Discard failed: ${data.error}`;
+			}
+		} catch (e) {
+			errorMessage = 'Failed to call discard API';
+		}
+	};
+
 	const handleSubmit = async (e: SubmitEvent) => {
 		e.preventDefault();
 		if (!title.trim()) return;
@@ -1091,6 +1123,16 @@
 								{#if suggestions.length > 0}
 									<button 
 										type="button" 
+										class="text-[9px] font-black uppercase tracking-widest text-error opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group border-r border-base-300 pr-4"
+										onclick={() => discardChanges()}
+										title="Discard all changes"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="group-hover:scale-110 transition-transform"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+										Discard All
+									</button>
+
+									<button 
+										type="button" 
 										class="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group border-r border-base-300 pr-4"
 										onclick={() => moveAll(true)}
 										title="Stage all files"
@@ -1161,6 +1203,14 @@
 												title="Stage file"
 											>
 												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+											</button>
+											<button
+												type="button"
+												class="btn btn-xs btn-ghost btn-circle text-error hover:bg-error/10"
+												onclick={(e) => { e.stopPropagation(); discardChanges(s.file); }}
+												title="Discard changes"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
 											</button>
 											<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} title="Toggle Diff">
 												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>

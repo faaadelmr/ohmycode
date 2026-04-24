@@ -78,14 +78,36 @@ export const GET: RequestHandler = async ({ url }) => {
 						: `git -C "${targetPath}" diff -U3 "${change.file}"`;
 
 					if (change.status === '??' || (change.isStaged && change.status === 'A')) {
-						diffData = 'New file content...';
-						if (fs.existsSync(fullPath) && (fullPath.endsWith('.ts') || fullPath.endsWith('.js') || fullPath.endsWith('.svelte'))) {
+						if (fs.existsSync(fullPath)) {
 							const content = fs.readFileSync(fullPath, 'utf8');
-							const functionMatches = content.match(/function\s+(\w+)|const\s+(\w+)\s*=\s*(\(.*?\)|.*?)\s*=>/g);
-							if (functionMatches) {
-								functions = functionMatches
-									.map(m => m.match(/(?:function\s+|const\s+)(\w+)/)?.[1])
-									.filter(n => n && !['onMount', 'onDestroy', '$state', '$derived', '$props', '$effect'].includes(n)) as string[];
+							const dLines = content.split('\n');
+							diffData = dLines.map((l) => `+${l}`).join('\n');
+							diffStats.additions = dLines.length;
+
+							if (
+								fullPath.endsWith('.ts') ||
+								fullPath.endsWith('.js') ||
+								fullPath.endsWith('.svelte')
+							) {
+								const functionMatches = content.match(
+									/function\s+(\w+)|const\s+(\w+)\s*=\s*(\(.*?\)|.*?)\s*=>/g
+								);
+								if (functionMatches) {
+									functions = functionMatches
+										.map((m) => m.match(/(?:function\s+|const\s+)(\w+)/)?.[1])
+										.filter(
+											(n) =>
+												n &&
+												![
+													'onMount',
+													'onDestroy',
+													'$state',
+													'$derived',
+													'$props',
+													'$effect'
+												].includes(n)
+										) as string[];
+								}
 							}
 						}
 					} else {

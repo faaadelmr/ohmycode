@@ -38,15 +38,15 @@ export const GET: RequestHandler = ({ url }) => {
 			try {
 				console.log(`[Watcher] Starting for: ${projectPath}`);
 				watcher = fs.watch(projectPath, { recursive: true }, (event, filename) => {
-					if (closed) return;
-					
+					if (closed || !filename) return;
+
 					// Filter out noise, but ALLOW .git/index to detect staging changes
 					const isSvelteKit = filename.includes('.svelte-kit');
 					const isNodeModules = filename.includes('node_modules');
 					const isOhMyCode = filename.includes('.ohmycode');
 					const isGitOther = filename.includes('.git') && !filename.endsWith('index') && !filename.endsWith('HEAD');
 
-					if (!filename || isSvelteKit || isNodeModules || isOhMyCode || isGitOther) return;
+					if (isSvelteKit || isNodeModules || isOhMyCode || isGitOther) return;
 
 					console.log(`[Watcher] Change detected: ${filename} (${event})`);
 
