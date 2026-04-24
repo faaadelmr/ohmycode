@@ -250,6 +250,17 @@
 		}
 	};
 
+	const toggleSelectAll = (isStagedList: boolean) => {
+		if (isStagedList) {
+			const anyUnselected = stagedChanges.some((s) => !s.selected);
+			stagedChanges.forEach((s) => (s.selected = anyUnselected));
+		} else {
+			const anyUnselected = suggestions.some((s) => !s.selected);
+			suggestions.forEach((s) => (s.selected = anyUnselected));
+		}
+		updateFormFromSelected();
+	};
+
 	const getChangedLineNumbers = (diff: string) => {
 		const changedLines = new Set<number>();
 		const lines = diff.split('\n');
@@ -714,6 +725,32 @@
 		}
 	};
 
+	const moveAll = async (toStaged: boolean) => {
+		if (!projectPath) return;
+
+		// Optimistic UI update
+		if (toStaged) {
+			stagedChanges.push(...suggestions.map((s) => ({ ...s, isStaged: true, selected: false })));
+			suggestions.length = 0;
+		} else {
+			suggestions.push(...stagedChanges.map((s) => ({ ...s, isStaged: false, selected: false })));
+			stagedChanges.length = 0;
+		}
+
+		updateFormFromSelected();
+
+		try {
+			await fetch('/api/git', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ projectPath, all: true, stage: toStaged })
+			});
+			// Watcher handles the sync
+		} catch {
+			syncWithGit();
+		}
+	};
+
 	const handleSubmit = async (e: SubmitEvent) => {
 		e.preventDefault();
 		if (!title.trim()) return;
@@ -890,7 +927,33 @@
 								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
 								Staged Changes
 							</h3>
-							<span class="badge badge-sm badge-success font-black bg-success/20 text-success border-none px-3">{stagedChanges.length}</span>
+							<div class="flex items-center gap-4">
+								{#if stagedChanges.length > 0}
+									<button 
+										type="button" 
+										class="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group border-r border-base-300 pr-4"
+										onclick={() => moveAll(false)}
+										title="Unstage all files"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="group-hover:-translate-x-0.5 transition-transform"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>
+										Unstage All
+									</button>
+
+									<button 
+										type="button" 
+										class="text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group"
+										onclick={() => toggleSelectAll(true)}
+									>
+										<span class="w-3.5 h-3.5 rounded border-2 border-current flex items-center justify-center transition-all {stagedChanges.every(s => s.selected) ? 'bg-success border-success text-success-content shadow-sm shadow-success/20' : 'border-base-content/20'}">
+											{#if stagedChanges.every(s => s.selected)}
+												<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+											{/if}
+										</span>
+										{stagedChanges.every(s => s.selected) ? 'Deselect All' : 'Select All'}
+									</button>
+								{/if}
+								<span class="badge badge-sm badge-success font-black bg-success/20 text-success border-none px-3">{stagedChanges.length}</span>
+							</div>
 						</div>
 						<div bind:this={stagedZoneEl} class="flex flex-col gap-3 min-h-[150px] rounded-3xl p-3 border-2 transition-all duration-200 {stagedZoneClass}">
 							{#each stagedChanges as s, i (s.id)}
@@ -1024,7 +1087,33 @@
 								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
 								Detected Changes
 							</h3>
-							<span class="badge badge-sm badge-warning font-black bg-warning/20 text-warning border-none px-3">{suggestions.length}</span>
+							<div class="flex items-center gap-4">
+								{#if suggestions.length > 0}
+									<button 
+										type="button" 
+										class="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group border-r border-base-300 pr-4"
+										onclick={() => moveAll(true)}
+										title="Stage all files"
+									>
+										Stage All
+										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="group-hover:translate-x-0.5 transition-transform"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+									</button>
+
+									<button 
+										type="button" 
+										class="text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group"
+										onclick={() => toggleSelectAll(false)}
+									>
+										<span class="w-3.5 h-3.5 rounded border-2 border-current flex items-center justify-center transition-all {suggestions.every(s => s.selected) ? 'bg-warning border-warning text-warning-content shadow-sm shadow-warning/20' : 'border-base-content/20'}">
+											{#if suggestions.every(s => s.selected)}
+												<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+											{/if}
+										</span>
+										{suggestions.every(s => s.selected) ? 'Deselect All' : 'Select All'}
+									</button>
+								{/if}
+								<span class="badge badge-sm badge-warning font-black bg-warning/20 text-warning border-none px-3">{suggestions.length}</span>
+							</div>
 						</div>
 						<div bind:this={unstagedZoneEl} class="flex flex-col gap-3 min-h-[150px] rounded-3xl p-3 border-2 transition-all duration-200 {unstagedZoneClass}">
 							{#each suggestions as s, i (s.id)}

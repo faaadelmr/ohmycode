@@ -143,25 +143,34 @@ export const GET: RequestHandler = async ({ url }) => {
 
 export const PUT: RequestHandler = async ({ request }) => {
 	try {
-		const { projectPath, file, stage } = await request.json();
+		const { projectPath, file, stage, all } = await request.json();
 
-		if (!projectPath || !fs.existsSync(projectPath) || !file) {
-			return json({ success: false, error: 'Valid project path and file are required' }, { status: 400 });
+		if (!projectPath || !fs.existsSync(projectPath)) {
+			return json({ success: false, error: 'Valid project path is required' }, { status: 400 });
 		}
 
-		const cmd = stage 
-			? `git -C "${projectPath}" add "${file}"`
-			: `git -C "${projectPath}" reset HEAD "${file}"`;
-		
+		let cmd = '';
+		if (all) {
+			cmd = stage ? `git -C "${projectPath}" add .` : `git -C "${projectPath}" reset HEAD .`;
+		} else {
+			if (!file) {
+				return json({ success: false, error: 'File is required' }, { status: 400 });
+			}
+			cmd = stage ? `git -C "${projectPath}" add "${file}"` : `git -C "${projectPath}" reset HEAD "${file}"`;
+		}
+
 		try {
 			execSync(cmd);
 			return json({ success: true });
 		} catch (err: any) {
-			return json({ 
-				success: false, 
-				error: `Git command failed`,
-				raw: err.stdout?.toString() || err.message
-			}, { status: 400 });
+			return json(
+				{
+					success: false,
+					error: `Git command failed`,
+					raw: err.stdout?.toString() || err.message
+				},
+				{ status: 400 }
+			);
 		}
 	} catch (error) {
 		return json({ success: false, error: (error as Error).message }, { status: 500 });
