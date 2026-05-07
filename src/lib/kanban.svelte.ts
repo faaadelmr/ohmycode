@@ -64,13 +64,13 @@ function createKanbanStore() {
 			save();
 			return newTask;
 		},
-		async syncToLocal(task: DutyTask, projectPath: string) {
+		async syncToLocal(task: DutyTask, projectPath: string, includeGitCommit?: boolean) {
 			if (!projectPath) return;
 			try {
 				const res = await fetch('/api/log/save', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ task, projectPath })
+					body: JSON.stringify({ task, projectPath, includeGitCommit })
 				});
 				const data = await res.json();
 				// Store the generated folder name back into the task so

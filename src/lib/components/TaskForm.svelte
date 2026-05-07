@@ -836,7 +836,7 @@
 		const newTask = kanbanStore.addTask(title, files, functions, description, notes, projectPath, fileDiffs);
 
 		if (projectPath) {
-			kanbanStore.syncToLocal(newTask, projectPath);
+			kanbanStore.syncToLocal(newTask, projectPath, includeGitCommit);
 		}
 
 		title = '';
@@ -851,229 +851,299 @@
 	};
 </script>
 
-<div class="card bg-base-100 border border-base-300 shadow-xl mb-12 overflow-visible">
-	<form onsubmit={handleSubmit} class="card-body p-6 sm:p-8">
-		<!-- Folder Selection -->
-		<div class="flex flex-col gap-4 mb-8">
-			<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-				<div class="flex items-center gap-4">
-					<h2 class="card-title text-2xl font-black uppercase tracking-tight flex items-center gap-3 text-primary">
-						<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-						Duty Dashboard
-					</h2>
+<div class="w-full mb-12 relative overflow-visible rounded-[2rem] p-0.5 bg-gradient-to-br from-base-300 via-base-100 to-base-300/40 shadow-2xl">
+	<!-- Ambient Backlight -->
+	<div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 rounded-[2rem] blur-2xl opacity-75 -z-10 pointer-events-none animate-pulse"></div>
 
-					<!-- Watcher Status Indicator -->
-					{#if projectPath}
-						<div
-							class="badge badge-sm gap-1.5 py-3 px-3 font-bold uppercase text-[9px] border-none shadow-sm transition-colors duration-500 {watcherStatus === 'live' ? 'bg-success/10 text-success' : watcherStatus === 'connecting' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error'}"
-							title={watcherStatus === 'live' ? `Real-time monitoring active. Last sync: ${lastSyncTime}` : 'Connecting to project...'}
-						>
-							<span class="w-1.5 h-1.5 rounded-full {watcherStatus === 'live' ? 'bg-success animate-pulse' : watcherStatus === 'connecting' ? 'bg-warning animate-bounce' : 'bg-error'}"></span>
-							{watcherStatus}
-						</div>
-					{/if}
-				</div>
+	<form onsubmit={handleSubmit} class="w-full flex flex-col xl:grid xl:grid-cols-12 gap-6 bg-base-100/80 backdrop-blur-xl rounded-[2rem] p-6 sm:p-8 overflow-hidden relative">
+		
+		<!-- Scanlines / Futuristic grid effect -->
+		<div class="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay" style="background-image: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 4px, 6px 100%;"></div>
 
-				<div class="flex flex-wrap items-center gap-2">
-					{#if projectPath}
-						<div class="badge badge-outline gap-2 font-mono text-[10px] py-3 opacity-70 border-base-300">
-							{projectPath}
-						</div>
-					{/if}
-
-					<button
-						type="button"
-						class="btn btn-primary btn-sm rounded-full gap-2 transition-transform hover:scale-105 active:scale-95"
-						onclick={() => openExplorer(projectPath)}
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-						Pick Folder
-					</button>
-				</div>
-			</div>
-
-			{#if errorMessage}
-				<div class="alert alert-error py-2 text-xs rounded-lg" transition:fade>
-					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-					<span>{errorMessage}</span>
-				</div>
-			{/if}
-
-			{#if successMessage}
-				<div class="alert alert-success py-2 text-xs rounded-lg" transition:fade>
-					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2l4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-					<span>{successMessage}</span>
-				</div>
-			{/if}
-		</div>
-
-		<!-- Explorer UI Overlay -->
-		{#if showExplorer}
-			<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" in:fade>
-				<div class="card w-full max-w-2xl bg-base-100 shadow-2xl border border-base-300 max-h-[80vh] flex flex-col" in:fly={{ y: 20 }}>
-					<div class="card-body p-0 overflow-hidden flex flex-col">
-						<div class="p-6 border-b border-base-300 bg-base-200/50">
-							<h3 class="font-black uppercase tracking-widest text-sm mb-4">Internal Folder Picker</h3>
-							<div class="flex items-center gap-2">
-								<button type="button" class="btn btn-sm btn-ghost" onclick={() => openExplorer(explorerParent)} title="Back">
-									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-								</button>
-								<div class="bg-base-100 px-4 py-2 rounded-xl border border-base-300 flex-1 font-mono text-[10px] truncate overflow-hidden">
-									{explorerPath}
-								</div>
-							</div>
-						</div>
-
-						<div class="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 custom-scrollbar">
-							{#each explorerDirs as dir}
-								<button
-									type="button"
-									class="flex items-center gap-3 p-3 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors text-left group"
-									onclick={() => openExplorer(explorerPath + pathSep + dir)}
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-40 group-hover:opacity-100 transition-opacity"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-									<span class="text-xs font-bold truncate">{dir}</span>
-								</button>
-							{/each}
-						</div>
-
-						<div class="p-6 border-t border-base-300 bg-base-200/50 flex justify-between gap-4">
-							<button type="button" class="btn btn-ghost rounded-full px-8" onclick={() => showExplorer = false}>Cancel</button>
-							<button type="button" class="btn btn-primary rounded-full px-8 font-black" onclick={selectFolder}>Select This Folder</button>
-						</div>
+		<!-- UPPER DECK: High-Tech Project Status HUD -->
+		<div class="col-span-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-base-content/10">
+			<div class="flex flex-wrap items-center gap-4">
+				<div class="flex items-center gap-3">
+					<div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 text-primary shadow-lg shadow-primary/10">
+						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+					</div>
+					<div>
+						<h2 class="text-xl font-black uppercase tracking-tight text-base-content bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+							Git Control Deck
+						</h2>
+						<p class="text-[9px] font-mono tracking-widest opacity-50 uppercase">v2.1 // System Active</p>
 					</div>
 				</div>
+
+				<!-- Watcher Status Indicator -->
+				{#if projectPath}
+					<div
+						class="badge badge-sm gap-1.5 py-3 px-3.5 font-mono font-bold uppercase text-[9px] border border-base-content/10 shadow-sm transition-all duration-500 {watcherStatus === 'live' ? 'bg-success/10 text-success border-success/20' : watcherStatus === 'connecting' ? 'bg-warning/10 text-warning border-warning/20' : 'bg-error/10 text-error border-error/20'}"
+						title={watcherStatus === 'live' ? `Real-time monitoring active. Last sync: ${lastSyncTime}` : 'Connecting to project...'}
+					>
+						<span class="w-1.5 h-1.5 rounded-full {watcherStatus === 'live' ? 'bg-success animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : watcherStatus === 'connecting' ? 'bg-warning animate-bounce' : 'bg-error'}"></span>
+						{watcherStatus}
+					</div>
+				{/if}
+			</div>
+
+			<div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+				{#if projectPath}
+					<div class="bg-base-200/50 hover:bg-base-200 px-4 py-2 rounded-xl border border-base-content/10 flex items-center gap-2 font-mono text-[10px] opacity-80 max-w-full md:max-w-xs truncate shadow-inner">
+						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary shrink-0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+						<span class="truncate">{projectPath}</span>
+					</div>
+				{/if}
+
+				<button
+					type="button"
+					class="btn btn-primary btn-sm rounded-xl gap-2 font-black uppercase text-[10px] tracking-wider transition-all hover:scale-105 hover:shadow-lg hover:shadow-primary/25 active:scale-95"
+					onclick={() => openExplorer(projectPath)}
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+					Pick Folder
+				</button>
+			</div>
+		</div>
+
+		{#if errorMessage}
+			<div class="col-span-12 alert alert-error py-3 px-4 text-xs rounded-xl flex items-center gap-3 border border-error/20 bg-error/10 text-error-content shadow-lg shadow-error/5" transition:fade>
+				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4 text-error" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+				<span class="font-bold">{errorMessage}</span>
 			</div>
 		{/if}
 
-		<!-- Git Changes (Side by Side) -->
-		{#if suggestions.length > 0 || stagedChanges.length > 0}
-			<div class="bg-base-200/50 rounded-[2.5rem] p-8 border border-base-300 mb-12 shadow-inner" transition:slide>
-				<div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
-					<!-- Staged Changes -->
-					<div
-						class="flex flex-col h-full"
-						role="region"
-						aria-label="Staged Changes"
-					>
-						<div class="flex justify-between items-center mb-5 px-2">
-							<h3 class="text-xs font-black uppercase tracking-widest text-success flex items-center gap-2">
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-								Staged Changes
-							</h3>
-							<div class="flex items-center gap-4">
+		{#if successMessage}
+			<div class="col-span-12 alert alert-success py-3 px-4 text-xs rounded-xl flex items-center gap-3 border border-success/20 bg-success/10 text-success-content shadow-lg shadow-success/5" transition:fade>
+				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4 text-success" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2l4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+				<span class="font-bold">{successMessage}</span>
+			</div>
+		{/if}
+
+		<!-- MAIN ROW SPLIT - LEFT (COMMIT / TICKET FORM) & RIGHT (VS CODE WORKSPACE STAGE) -->
+		
+		<!-- LEFT SIDEBAR: Commit Console Panel (Col Span 5) -->
+		<div class="col-span-12 xl:col-span-5 flex flex-col gap-5 bg-base-200/30 p-5 rounded-2xl border border-base-content/5 relative overflow-visible">
+			<div class="absolute -top-3 left-4 bg-base-100 px-3 py-1 rounded-md border border-base-content/10 font-mono text-[9px] font-black uppercase tracking-wider text-primary">
+				CONSOLE_DECK
+			</div>
+
+			<!-- Form Fields -->
+			<div class="grid grid-cols-1 gap-4 mt-2">
+				<div class="form-control">
+					<label class="label py-1" for="duty-title">
+						<span class="label-text font-mono font-black uppercase text-[10px] opacity-60 flex items-center gap-1.5 text-primary">
+							<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+							Task Heading
+						</span>
+					</label>
+					<input
+						id="duty-title"
+						type="text"
+						bind:value={title}
+						placeholder="E.g., Auth: fix signin flow"
+						class="input input-bordered w-full font-bold focus:border-primary focus:ring-1 focus:ring-primary transition-all rounded-xl text-xs bg-base-100/50"
+						required
+					/>
+				</div>
+
+				<div class="form-control">
+					<label class="label py-1" for="duty-files">
+						<span class="label-text font-mono font-black uppercase text-[10px] opacity-60 flex items-center gap-1.5 text-primary">
+							<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+							Impacted Files
+						</span>
+					</label>
+					<input
+						id="duty-files"
+						type="text"
+						bind:value={filesInput}
+						placeholder="index.ts, app.svelte..."
+						class="input input-bordered w-full font-mono text-[10px] focus:border-primary focus:ring-1 focus:ring-primary transition-all rounded-xl bg-base-100/50"
+					/>
+				</div>
+			</div>
+
+			<div class="form-control flex-1 flex flex-col">
+				<label class="label py-1" for="duty-notes">
+					<span class="label-text font-mono font-black uppercase text-[10px] opacity-60 flex items-center gap-1.5 text-primary">
+						<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+						Commit Notes
+					</span>
+				</label>
+				<textarea
+					id="duty-notes"
+					bind:value={notes}
+					placeholder="Detailed logic changes (one bullet point per line)..."
+					class="textarea textarea-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all rounded-xl flex-1 min-h-[140px] font-mono text-[10px] bg-base-100/50 custom-scrollbar"
+				></textarea>
+			</div>
+
+			<!-- Action Panel & Trigger -->
+			<div class="flex flex-col gap-4 mt-2 p-4 bg-base-100/40 rounded-xl border border-base-content/5">
+				<div class="form-control flex flex-row items-center justify-between">
+					<div class="flex flex-col text-left">
+						<span class="text-[10px] font-mono font-black uppercase tracking-tight text-primary">Git Commit Push</span>
+						<span class="text-[9px] opacity-50">Auto-commit to git alongside saving task log</span>
+					</div>
+					<input type="checkbox" class="toggle toggle-primary toggle-sm" bind:checked={includeGitCommit} disabled={!projectPath} />
+				</div>
+
+				<button
+					type="submit"
+					class="btn btn-primary w-full rounded-xl font-black uppercase tracking-wider text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-primary/20 {isCommitting ? 'loading' : ''}"
+					disabled={isCommitting}
+				>
+					{#if !isCommitting}
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+					{/if}
+					Deploy Logs & Commit
+				</button>
+			</div>
+		</div>
+
+		<!-- RIGHT WORKSPACE: VS Code Stage & Diff Deck (Col Span 7) -->
+		<div class="col-span-12 xl:col-span-7 flex flex-col gap-6 relative overflow-visible min-h-[450px]">
+			
+			{#if suggestions.length > 0 || stagedChanges.length > 0}
+				<!-- Grid Layout for Staged & Detected Changes side-by-side inside the workspace area -->
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 h-full" transition:slide>
+					
+					<!-- 1. STAGED CHANGES CONTAINER (Neon Green Trim) -->
+					<div class="flex flex-col bg-base-200/10 rounded-2xl border border-success/15 shadow-sm p-4 h-full min-h-[300px]">
+						<div class="flex justify-between items-center pb-3 border-b border-base-content/5 mb-3">
+							<div class="flex items-center gap-1.5">
+								<span class="w-2 h-2 rounded-full bg-success animate-pulse shadow-[0_0_6px_rgba(34,197,94,0.8)]"></span>
+								<h3 class="text-[10px] font-mono font-black uppercase tracking-wider text-success">Staged Changes</h3>
+							</div>
+							<div class="flex items-center gap-2">
 								{#if stagedChanges.length > 0}
 									<button 
 										type="button" 
-										class="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group border-r border-base-300 pr-4"
+										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
 										onclick={() => moveAll(false)}
 										title="Unstage all files"
 									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="group-hover:-translate-x-0.5 transition-transform"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>
 										Unstage All
 									</button>
-
+									<span class="text-base-content/20 font-mono text-[9px]">|</span>
 									<button 
 										type="button" 
-										class="text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group"
+										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
 										onclick={() => toggleSelectAll(true)}
 									>
-										<span class="w-3.5 h-3.5 rounded border-2 border-current flex items-center justify-center transition-all {stagedChanges.every(s => s.selected) ? 'bg-success border-success text-success-content shadow-sm shadow-success/20' : 'border-base-content/20'}">
-											{#if stagedChanges.every(s => s.selected)}
-												<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-											{/if}
-										</span>
-										{stagedChanges.every(s => s.selected) ? 'Deselect All' : 'Select All'}
+										{stagedChanges.every(s => s.selected) ? 'Deselect' : 'Select'}
 									</button>
 								{/if}
-								<span class="badge badge-sm badge-success font-black bg-success/20 text-success border-none px-3">{stagedChanges.length}</span>
+								<span class="badge badge-sm bg-success/15 border-success/10 text-success font-mono font-black px-2">{stagedChanges.length}</span>
 							</div>
 						</div>
-						<div bind:this={stagedZoneEl} class="flex flex-col gap-3 min-h-[150px] rounded-3xl p-3 border-2 transition-all duration-200 {stagedZoneClass}">
+
+						<!-- Staging Drop & Scroll Area -->
+						<div 
+							bind:this={stagedZoneEl} 
+							class="flex-1 flex flex-col gap-2.5 overflow-y-auto custom-scrollbar p-1 transition-all duration-300 rounded-xl {stagedZoneClass}"
+						>
 							{#each stagedChanges as s, i (s.id)}
-								<div
-									animate:flip={{ duration: 250 }}
-									class="flex flex-col gap-1"
-									role="listitem"
-									aria-label="Staged file {s.file}"
-								>
+								<div animate:flip={{ duration: 250 }} class="flex flex-col gap-1.5">
 									{#if dragState?.file === s.file && dragState?.fromStaged === true && dragHasMoved}
-										<div class="h-[60px] rounded-2xl border-2 border-dashed border-primary/30 bg-primary/5" in:fade={{ duration: 120 }}></div>
+										<div class="h-[52px] rounded-xl border-2 border-dashed border-primary/20 bg-primary/2" in:fade={{ duration: 120 }}></div>
 									{:else}
-									<div
-										role="button"
-										tabindex="0"
-										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border select-none cursor-grab active:cursor-grabbing
-											{s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}
-											{droppedFile === s.file ? 'ring-2 ring-success ring-offset-2 ring-offset-base-100' : ''}"
-										style="touch-action: none;"
-										onpointerdown={(e) => onCardPointerDown(e, s.file, true)}
-										onclick={() => toggleSelection(i, true)}
-										onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, true)}
-									>
-										<div class="checkbox checkbox-sm pointer-events-none {s.selected ? 'checkbox-primary bg-white' : ''}">
-											<input type="checkbox" checked={s.selected} aria-label="Select file"/>
-										</div>
-										<div class="flex flex-col overflow-hidden flex-1">
-											<span class="font-mono text-xs truncate font-bold">{s.file}</span>
-											<div class="flex items-center gap-2 mt-1">
-												<span class="text-[9px] font-black">
+										<div
+											role="button"
+											tabindex="0"
+											class="flex items-center justify-between p-3 rounded-xl border select-none cursor-grab active:cursor-grabbing transition-all text-left
+												{s.selected ? 'bg-success/5 border-success/40 shadow-sm' : 'bg-base-100/50 hover:bg-base-200/50 border-base-content/10 shadow-sm'}
+												{droppedFile === s.file ? 'ring-1 ring-success ring-offset-1 ring-offset-base-100' : ''}"
+											style="touch-action: none;"
+											onpointerdown={(e) => onCardPointerDown(e, s.file, true)}
+											onclick={() => toggleSelection(i, true)}
+											onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, true)}
+										>
+											<div class="flex items-center gap-2.5 overflow-hidden flex-1">
+												<input 
+													type="checkbox" 
+													checked={s.selected} 
+													class="checkbox checkbox-xs checkbox-success shrink-0" 
+													onclick={(e) => e.stopPropagation()} 
+													onchange={() => toggleSelection(i, true)}
+													aria-label="Select file"
+												/>
+												<div class="flex flex-col min-w-0 overflow-hidden">
+													<span class="font-mono text-[10px] font-bold truncate text-base-content/90">{s.file.split(/[/\\]/).pop()}</span>
+													<span class="font-mono text-[8px] opacity-40 truncate">{s.file}</span>
+												</div>
+											</div>
+
+											<div class="flex items-center gap-2.5 ml-2 shrink-0">
+												<span class="font-mono text-[8px] font-black leading-none bg-base-100 border border-base-content/5 py-1 px-1.5 rounded">
 													<span class="text-success">+{s.stats.additions}</span>
 													<span class="text-error">-{s.stats.deletions}</span>
 												</span>
+
 												{#if !s.selected}
 													{@const ccType = getFileCommitType(s)}
-													<span class="badge badge-xs border font-black px-1.5 py-2 rounded-md {ccBadgeClass(ccType)}">{ccType}</span>
+													<span class="badge badge-xs border font-mono font-black text-[7px] tracking-wide rounded px-1 {ccBadgeClass(ccType)}">{ccType}</span>
 												{/if}
-											</div>
-										</div>
-										<div class="flex flex-col items-center gap-0.5">
-											<button
-												type="button"
-												class="btn btn-xs btn-ghost btn-circle text-error hover:bg-error/10"
-												onclick={(e) => moveFile(e, s.file, false)}
-												title="Unstage file"
-											>
-												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-											</button>
-											<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, true)} title="Toggle Diff">
-												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
-											</button>
-										</div>
-									</div>
-									{/if}
-									{#if s.showDiff && s.diff}
-										{#if editingDiffId === s.id}
-											<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
-												<div class="mb-2 flex justify-end gap-2 not-italic whitespace-normal">
-													<button type="button" class="btn btn-xs btn-primary rounded-full px-3" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
-														{savingEditor ? 'Saving...' : 'Save'}
+
+												<div class="flex items-center gap-1">
+													<button
+														type="button"
+														class="btn btn-xs btn-ghost btn-square text-error hover:bg-error/10 shrink-0"
+														onclick={(e) => moveFile(e, s.file, false)}
+														title="Unstage file"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
 													</button>
-													<button type="button" class="btn btn-xs btn-ghost rounded-full px-3" onclick={cancelInlineEdit} disabled={savingEditor}>
-														Cancel
+													<button 
+														type="button" 
+														class="btn btn-xs btn-ghost btn-square shrink-0" 
+														onclick={(e) => toggleDiff(e, i, true)} 
+														title="Toggle Diff"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform duration-200 {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
 													</button>
 												</div>
+											</div>
+										</div>
+									{/if}
+
+									<!-- Inline Code Diff (Directly under the card in the VS Code grid) -->
+									{#if s.showDiff && s.diff}
+										<div class="cyber-diff-pane bg-black/90 text-white rounded-xl p-3 border border-base-content/10 mt-0.5 shadow-inner" transition:slide>
+											{#if editingDiffId === s.id}
+												<div class="flex justify-between items-center mb-2 pb-1.5 border-b border-white/5">
+													<span class="font-mono text-[8px] text-white/40">INLINE_EDITOR: ACTIVE</span>
+													<div class="flex gap-1.5">
+														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-success rounded-md px-2 font-mono" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
+															{savingEditor ? 'Saving' : 'Save'}
+														</button>
+														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-ghost text-white rounded-md px-2 font-mono" onclick={cancelInlineEdit} disabled={savingEditor}>
+															Cancel
+														</button>
+													</div>
+												</div>
 												{#if editingError}
-													<div class="mb-3 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-[10px] text-error whitespace-normal">
+													<div class="mb-2 p-1.5 rounded bg-error/15 border border-error/20 text-[8px] text-error">
 														{editingError}
 													</div>
 												{/if}
 												{#if loadingEditor}
-													<div class="px-1 text-[10px] opacity-60 whitespace-normal">Loading file content...</div>
+													<span class="loading loading-spinner loading-xs"></span>
 												{:else}
-													<div class="max-h-80 overflow-auto">
+													<div class="max-h-60 overflow-y-auto custom-scrollbar font-mono text-[9px] leading-relaxed">
 														{#each editingRows as row, rowIndex (row.key)}
-															<div class="{row.kind === 'add' ? 'text-success bg-success/5' : row.kind === 'remove' ? 'text-error bg-error/5' : row.kind === 'context' ? 'opacity-50' : 'opacity-50'} px-1">
+															<div class="{row.kind === 'add' ? 'text-emerald-400 bg-emerald-950/20 border-l border-emerald-500' : row.kind === 'remove' ? 'text-rose-400 bg-rose-950/20 border-l border-rose-500' : 'opacity-60'} px-2">
 																{#if row.kind === 'hunk'}
-																	<div>{row.content}</div>
+																	<div class="text-sky-400 font-bold opacity-80">{row.content}</div>
 																{:else if row.editable}
-																	<div class="grid grid-cols-[10px_1fr] items-start gap-1">
-																		<span>{row.kind === 'add' ? '+' : ' '}</span>
+																	<div class="grid grid-cols-[10px_1fr] gap-1 items-center">
+																		<span class="opacity-50">+</span>
 																		<input
 																			type="text"
 																			value={row.content}
 																			oninput={(e) => updateEditingRow(rowIndex, (e.currentTarget as HTMLInputElement).value)}
-																			class="min-w-0 border-0 bg-transparent p-0 font-mono text-[9px] leading-normal text-inherit focus:outline-none"
+																			class="w-full bg-transparent p-0 border-0 focus:outline-none text-white font-mono text-[9px]"
 																			spellcheck="false"
 																		/>
 																	</div>
@@ -1084,174 +1154,183 @@
 														{/each}
 													</div>
 												{/if}
-											</div>
-										{:else}
-											<button
-												type="button"
-												class="mt-1 w-full overflow-x-auto whitespace-pre rounded-2xl border border-base-300 bg-base-300 p-4 text-left font-mono text-[9px] shadow-inner"
-												transition:slide
-												ondblclick={() => startInlineEdit(s)}
-												title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
-											>
-												{#each s.diff.split('\n') as line}
-													<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
-												{/each}
-											</button>
-										{/if}
+											{:else}
+												<button
+													type="button"
+													class="w-full text-left font-mono text-[9px] max-h-60 overflow-y-auto custom-scrollbar leading-relaxed"
+													ondblclick={() => startInlineEdit(s)}
+													title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
+												>
+													{#each s.diff.split('\n') as line}
+														<div class="{line.startsWith('+') ? 'text-emerald-400 bg-emerald-950/10' : line.startsWith('-') ? 'text-rose-400 bg-rose-950/10' : 'opacity-40'} px-2">{line}</div>
+													{/each}
+												</button>
+											{/if}
+										</div>
 									{/if}
 								</div>
 							{/each}
 							{#if stagedChanges.length === 0}
-								<div class="flex-1 flex flex-col items-center justify-center opacity-20 py-10 gap-3">
-									<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-									<span class="italic text-[10px] font-black uppercase tracking-widest">Drop here to stage</span>
+								<div class="flex-1 flex flex-col items-center justify-center opacity-25 py-12 gap-3 border border-dashed border-success/10 rounded-xl">
+									<svg xmlns="http://www.w3.org/2000/svg" class="text-success" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+									<span class="font-mono text-[8px] uppercase tracking-wider">Drag Files here to stage</span>
 								</div>
 							{/if}
 						</div>
 					</div>
 
-					<!-- Unstaged (Detected) Changes -->
-					<div
-						class="flex flex-col h-full"
-						role="region"
-						aria-label="Detected Changes"
-					>
-						<div class="flex justify-between items-center mb-5 px-2">
-							<h3 class="text-xs font-black uppercase tracking-widest text-warning flex items-center gap-2">
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-								Detected Changes
-							</h3>
-							<div class="flex items-center gap-4">
+					<!-- 2. DETECTED CHANGES CONTAINER (Neon Amber Trim) -->
+					<div class="flex flex-col bg-base-200/10 rounded-2xl border border-warning/15 shadow-sm p-4 h-full min-h-[300px]">
+						<div class="flex justify-between items-center pb-3 border-b border-base-content/5 mb-3">
+							<div class="flex items-center gap-1.5">
+								<span class="w-2 h-2 rounded-full bg-warning animate-pulse shadow-[0_0_6px_rgba(234,179,8,0.8)]"></span>
+								<h3 class="text-[10px] font-mono font-black uppercase tracking-wider text-warning">Detected Changes</h3>
+							</div>
+							<div class="flex items-center gap-2">
 								{#if suggestions.length > 0}
 									<button 
 										type="button" 
-										class="text-[9px] font-black uppercase tracking-widest text-error opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group border-r border-base-300 pr-4"
+										class="text-[9px] font-mono font-bold uppercase tracking-tight text-error opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
 										onclick={() => discardChanges()}
 										title="Discard all changes"
 									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="group-hover:scale-110 transition-transform"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
 										Discard All
 									</button>
-
+									<span class="text-base-content/20 font-mono text-[9px]">|</span>
 									<button 
 										type="button" 
-										class="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group border-r border-base-300 pr-4"
+										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
 										onclick={() => moveAll(true)}
 										title="Stage all files"
 									>
 										Stage All
-										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="group-hover:translate-x-0.5 transition-transform"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
 									</button>
-
+									<span class="text-base-content/20 font-mono text-[9px]">|</span>
 									<button 
 										type="button" 
-										class="text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1.5 group"
+										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
 										onclick={() => toggleSelectAll(false)}
 									>
-										<span class="w-3.5 h-3.5 rounded border-2 border-current flex items-center justify-center transition-all {suggestions.every(s => s.selected) ? 'bg-warning border-warning text-warning-content shadow-sm shadow-warning/20' : 'border-base-content/20'}">
-											{#if suggestions.every(s => s.selected)}
-												<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-											{/if}
-										</span>
-										{suggestions.every(s => s.selected) ? 'Deselect All' : 'Select All'}
+										{suggestions.every(s => s.selected) ? 'Deselect' : 'Select'}
 									</button>
 								{/if}
-								<span class="badge badge-sm badge-warning font-black bg-warning/20 text-warning border-none px-3">{suggestions.length}</span>
+								<span class="badge badge-sm bg-warning/15 border-warning/10 text-warning font-mono font-black px-2">{suggestions.length}</span>
 							</div>
 						</div>
-						<div bind:this={unstagedZoneEl} class="flex flex-col gap-3 min-h-[150px] rounded-3xl p-3 border-2 transition-all duration-200 {unstagedZoneClass}">
+
+						<!-- Detected Drop & Scroll Area -->
+						<div 
+							bind:this={unstagedZoneEl} 
+							class="flex-1 flex flex-col gap-2.5 overflow-y-auto custom-scrollbar p-1 transition-all duration-300 rounded-xl {unstagedZoneClass}"
+						>
 							{#each suggestions as s, i (s.id)}
-								<div
-									animate:flip={{ duration: 250 }}
-									class="flex flex-col gap-1"
-									role="listitem"
-									aria-label="Unstaged file {s.file}"
-								>
+								<div animate:flip={{ duration: 250 }} class="flex flex-col gap-1.5">
 									{#if dragState?.file === s.file && dragState?.fromStaged === false && dragHasMoved}
-										<div class="h-[60px] rounded-2xl border-2 border-dashed border-primary/30 bg-primary/5" in:fade={{ duration: 120 }}></div>
+										<div class="h-[52px] rounded-xl border-2 border-dashed border-primary/20 bg-primary/2" in:fade={{ duration: 120 }}></div>
 									{:else}
-									<div
-										role="button"
-										tabindex="0"
-										class="flex items-center gap-3 p-4 rounded-2xl transition-all text-left border select-none cursor-grab active:cursor-grabbing
-											{s.selected ? 'bg-primary text-primary-content border-primary shadow-lg' : 'bg-base-100 hover:bg-base-200 border-base-300 shadow-sm'}
-											{droppedFile === s.file ? 'ring-2 ring-success ring-offset-2 ring-offset-base-100' : ''}"
-										style="touch-action: none;"
-										onpointerdown={(e) => onCardPointerDown(e, s.file, false)}
-										onclick={() => toggleSelection(i, false)}
-										onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, false)}
-									>
-										<div class="checkbox checkbox-sm pointer-events-none {s.selected ? 'checkbox-primary bg-white' : ''}">
-											<input type="checkbox" checked={s.selected} aria-label="Select file"/>
-										</div>
-										<div class="flex flex-col overflow-hidden flex-1">
-											<span class="font-mono text-xs truncate font-bold">{s.file}</span>
-											<div class="flex items-center gap-2 mt-1">
-												<span class="text-[9px] font-black">
+										<div
+											role="button"
+											tabindex="0"
+											class="flex items-center justify-between p-3 rounded-xl border select-none cursor-grab active:cursor-grabbing transition-all text-left
+												{s.selected ? 'bg-warning/5 border-warning/40 shadow-sm' : 'bg-base-100/50 hover:bg-base-200/50 border-base-content/10 shadow-sm'}
+												{droppedFile === s.file ? 'ring-1 ring-success ring-offset-1 ring-offset-base-100' : ''}"
+											style="touch-action: none;"
+											onpointerdown={(e) => onCardPointerDown(e, s.file, false)}
+											onclick={() => toggleSelection(i, false)}
+											onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, false)}
+										>
+											<div class="flex items-center gap-2.5 overflow-hidden flex-1">
+												<input 
+													type="checkbox" 
+													checked={s.selected} 
+													class="checkbox checkbox-xs checkbox-warning shrink-0" 
+													onclick={(e) => e.stopPropagation()} 
+													onchange={() => toggleSelection(i, false)}
+													aria-label="Select file"
+												/>
+												<div class="flex flex-col min-w-0 overflow-hidden">
+													<span class="font-mono text-[10px] font-bold truncate text-base-content/90">{s.file.split(/[/\\]/).pop()}</span>
+													<span class="font-mono text-[8px] opacity-40 truncate">{s.file}</span>
+												</div>
+											</div>
+
+											<div class="flex items-center gap-2.5 ml-2 shrink-0">
+												<span class="font-mono text-[8px] font-black leading-none bg-base-100 border border-base-content/5 py-1 px-1.5 rounded">
 													<span class="text-success">+{s.stats.additions}</span>
 													<span class="text-error">-{s.stats.deletions}</span>
 												</span>
+
 												{#if !s.selected}
 													{@const ccType = getFileCommitType(s)}
-													<span class="badge badge-xs border font-black px-1.5 py-2 rounded-md {ccBadgeClass(ccType)}">{ccType}</span>
+													<span class="badge badge-xs border font-mono font-black text-[7px] tracking-wide rounded px-1 {ccBadgeClass(ccType)}">{ccType}</span>
 												{/if}
-											</div>
-										</div>
-										<div class="flex flex-col items-center gap-0.5">
-											<button
-												type="button"
-												class="btn btn-xs btn-ghost btn-circle text-success hover:bg-success/10"
-												onclick={(e) => moveFile(e, s.file, true)}
-												title="Stage file"
-											>
-												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-											</button>
-											<button
-												type="button"
-												class="btn btn-xs btn-ghost btn-circle text-error hover:bg-error/10"
-												onclick={(e) => { e.stopPropagation(); discardChanges(s.file); }}
-												title="Discard changes"
-											>
-												<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-											</button>
-											<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={(e) => toggleDiff(e, i, false)} title="Toggle Diff">
-												<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
-											</button>
-										</div>
-									</div>
-									{/if}
-									{#if s.showDiff && s.diff}
-										{#if editingDiffId === s.id}
-											<div class="bg-base-300 rounded-2xl p-4 font-mono text-[9px] overflow-x-auto whitespace-pre border border-base-300 shadow-inner mt-1" transition:slide>
-												<div class="mb-2 flex justify-end gap-2 not-italic whitespace-normal">
-													<button type="button" class="btn btn-xs btn-primary rounded-full px-3" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
-														{savingEditor ? 'Saving...' : 'Save'}
+
+												<div class="flex items-center gap-1">
+													<button
+														type="button"
+														class="btn btn-xs btn-ghost btn-square text-success hover:bg-success/10 shrink-0"
+														onclick={(e) => moveFile(e, s.file, true)}
+														title="Stage file"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
 													</button>
-													<button type="button" class="btn btn-xs btn-ghost rounded-full px-3" onclick={cancelInlineEdit} disabled={savingEditor}>
-														Cancel
+													<button
+														type="button"
+														class="btn btn-xs btn-ghost btn-square text-error hover:bg-error/10 shrink-0"
+														onclick={(e) => { e.stopPropagation(); discardChanges(s.file); }}
+														title="Discard changes"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+													</button>
+													<button 
+														type="button" 
+														class="btn btn-xs btn-ghost btn-square shrink-0" 
+														onclick={(e) => toggleDiff(e, i, false)} 
+														title="Toggle Diff"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform duration-200 {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
 													</button>
 												</div>
+											</div>
+										</div>
+									{/if}
+
+									<!-- Inline Code Diff (Directly under the card in the VS Code grid) -->
+									{#if s.showDiff && s.diff}
+										<div class="cyber-diff-pane bg-black/90 text-white rounded-xl p-3 border border-base-content/10 mt-0.5 shadow-inner" transition:slide>
+											{#if editingDiffId === s.id}
+												<div class="flex justify-between items-center mb-2 pb-1.5 border-b border-white/5">
+													<span class="font-mono text-[8px] text-white/40">INLINE_EDITOR: ACTIVE</span>
+													<div class="flex gap-1.5">
+														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-success rounded-md px-2 font-mono" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
+															{savingEditor ? 'Saving' : 'Save'}
+														</button>
+														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-ghost text-white rounded-md px-2 font-mono" onclick={cancelInlineEdit} disabled={savingEditor}>
+															Cancel
+														</button>
+													</div>
+												</div>
 												{#if editingError}
-													<div class="mb-3 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-[10px] text-error whitespace-normal">
+													<div class="mb-2 p-1.5 rounded bg-error/15 border border-error/20 text-[8px] text-error">
 														{editingError}
 													</div>
 												{/if}
 												{#if loadingEditor}
-													<div class="px-1 text-[10px] opacity-60 whitespace-normal">Loading file content...</div>
+													<span class="loading loading-spinner loading-xs"></span>
 												{:else}
-													<div class="max-h-80 overflow-auto">
+													<div class="max-h-60 overflow-y-auto custom-scrollbar font-mono text-[9px] leading-relaxed">
 														{#each editingRows as row, rowIndex (row.key)}
-															<div class="{row.kind === 'add' ? 'text-success bg-success/5' : row.kind === 'remove' ? 'text-error bg-error/5' : row.kind === 'context' ? 'opacity-50' : 'opacity-50'} px-1">
+															<div class="{row.kind === 'add' ? 'text-emerald-400 bg-emerald-950/20 border-l border-emerald-500' : row.kind === 'remove' ? 'text-rose-400 bg-rose-950/20 border-l border-rose-500' : 'opacity-60'} px-2">
 																{#if row.kind === 'hunk'}
-																	<div>{row.content}</div>
+																	<div class="text-sky-400 font-bold opacity-80">{row.content}</div>
 																{:else if row.editable}
-																	<div class="grid grid-cols-[10px_1fr] items-start gap-1">
-																		<span>{row.kind === 'add' ? '+' : ' '}</span>
+																	<div class="grid grid-cols-[10px_1fr] gap-1 items-center">
+																		<span class="opacity-50">+</span>
 																		<input
 																			type="text"
 																			value={row.content}
 																			oninput={(e) => updateEditingRow(rowIndex, (e.currentTarget as HTMLInputElement).value)}
-																			class="min-w-0 border-0 bg-transparent p-0 font-mono text-[9px] leading-normal text-inherit focus:outline-none"
+																			class="w-full bg-transparent p-0 border-0 focus:outline-none text-white font-mono text-[9px]"
 																			spellcheck="false"
 																		/>
 																	</div>
@@ -1262,45 +1341,45 @@
 														{/each}
 													</div>
 												{/if}
-											</div>
-										{:else}
-											<button
-												type="button"
-												class="mt-1 w-full overflow-x-auto whitespace-pre rounded-2xl border border-base-300 bg-base-300 p-4 text-left font-mono text-[9px] shadow-inner"
-												transition:slide
-												ondblclick={() => startInlineEdit(s)}
-												title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
-											>
-												{#each s.diff.split('\n') as line}
-													<div class="{line.startsWith('+') ? 'text-success bg-success/5' : line.startsWith('-') ? 'text-error bg-error/5' : 'opacity-50'} px-1">{line}</div>
-												{/each}
-											</button>
-										{/if}
+											{:else}
+												<button
+													type="button"
+													class="w-full text-left font-mono text-[9px] max-h-60 overflow-y-auto custom-scrollbar leading-relaxed"
+													ondblclick={() => startInlineEdit(s)}
+													title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
+												>
+													{#each s.diff.split('\n') as line}
+														<div class="{line.startsWith('+') ? 'text-emerald-400 bg-emerald-950/10' : line.startsWith('-') ? 'text-rose-400 bg-rose-950/10' : 'opacity-40'} px-2">{line}</div>
+													{/each}
+												</button>
+											{/if}
+										</div>
 									{/if}
 								</div>
 							{/each}
 							{#if suggestions.length === 0}
-								<div class="flex-1 flex flex-col items-center justify-center opacity-20 py-10 gap-3">
-									<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-									<span class="italic text-[10px] font-black uppercase tracking-widest">All changes are staged</span>
+								<div class="flex-1 flex flex-col items-center justify-center opacity-25 py-12 gap-3 border border-dashed border-warning/10 rounded-xl">
+									<svg xmlns="http://www.w3.org/2000/svg" class="text-warning" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+									<span class="font-mono text-[8px] uppercase tracking-wider">All changes are staged</span>
 								</div>
 							{/if}
 						</div>
 					</div>
+
 				</div>
 
-				<!-- Recent Commit Messages (Bottom) -->
+				<!-- Recent Commit Messages (Bottom overlay inside Workspace) -->
 				{#if recentCommits.length > 0}
-					<div class="mt-10 pt-8 border-t border-base-300/50">
-						<h3 class="text-xs font-black uppercase tracking-widest opacity-40 mb-5 flex items-center gap-2 ml-2">
-							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-							Recent History Context
-						</h3>
-						<div class="flex flex-wrap gap-3">
+					<div class="pt-4 border-t border-base-content/5">
+						<h4 class="text-[9px] font-mono font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-1.5 ml-1">
+							<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+							Recent Commits
+						</h4>
+						<div class="flex flex-wrap gap-2">
 							{#each recentCommits as commit}
 								<button
 									type="button"
-									class="p-2.5 px-5 rounded-2xl bg-base-100 hover:bg-base-300 border border-dashed border-base-300 transition-all text-left text-[10px] opacity-70 hover:opacity-100 italic hover:border-solid hover:shadow-md"
+									class="p-2 px-3 rounded-xl bg-base-200/55 hover:bg-base-200 hover:border-primary border border-dashed border-base-content/10 transition-all text-left text-[9px] opacity-75 hover:opacity-100 font-mono italic shrink-0"
 									onclick={() => useCommitMessage(commit)}
 								>
 									"{commit}"
@@ -1309,132 +1388,84 @@
 						</div>
 					</div>
 				{/if}
+
+			{:else}
+				<!-- Empty Workspace Welcome Deck (Extremely Premium Futuristic Welcome Panel) -->
+				<div class="flex-1 flex flex-col items-center justify-center p-8 bg-base-200/20 border border-base-content/5 rounded-3xl relative overflow-hidden" transition:fade>
+					<div class="absolute inset-0 opacity-[0.02]" style="background-size: 20px 20px; background-image: radial-gradient(circle, currentColor 1px, transparent 1px);"></div>
+					<div class="text-center relative z-10 max-w-sm flex flex-col items-center">
+						<div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center border border-base-content/10 mb-4 shadow-inner text-primary/70 animate-pulse">
+							<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path></svg>
+						</div>
+						<h3 class="font-black uppercase tracking-widest text-xs mb-1 text-base-content/80">WORKSPACE EMPTY</h3>
+						<p class="text-[10px] leading-relaxed opacity-50 mb-5">
+							No modifications detected in your active `.git` workspace. Open files in your local project to begin tracking your duties.
+						</p>
+						<div class="flex flex-wrap gap-2 justify-center">
+							<div class="badge badge-sm badge-outline font-mono text-[8px] py-2 px-3 border-base-content/10 uppercase">Local Watcher Active</div>
+							<div class="badge badge-sm badge-outline font-mono text-[8px] py-2 px-3 border-base-content/10 uppercase">Auto Sync</div>
+						</div>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Explorer UI Overlay (Sleek Blur HUD style) -->
+		{#if showExplorer}
+			<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md" in:fade>
+				<div class="card w-full max-w-xl bg-base-100 shadow-2xl border border-base-content/15 max-h-[75vh] flex flex-col rounded-[2rem] overflow-hidden" in:fly={{ y: 20 }}>
+					<div class="p-5 border-b border-base-content/10 bg-base-200/50 flex flex-col gap-3">
+						<div class="flex justify-between items-center">
+							<h3 class="font-black uppercase tracking-widest text-xs text-primary">Local Path Explorer</h3>
+							<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={() => showExplorer = false}>✕</button>
+						</div>
+						<div class="flex items-center gap-2">
+							<button type="button" class="btn btn-xs btn-ghost border border-base-content/10 h-8 px-2 rounded-lg" onclick={() => openExplorer(explorerParent)} title="Back">
+								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+							</button>
+							<div class="bg-base-200 px-3 py-1.5 rounded-lg border border-base-content/5 flex-1 font-mono text-[9px] truncate text-base-content/80 shadow-inner">
+								{explorerPath}
+							</div>
+						</div>
+					</div>
+
+					<div class="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 custom-scrollbar">
+						{#each explorerDirs as dir}
+							<button
+								type="button"
+								class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-primary/10 hover:text-primary transition-all text-left group border border-transparent hover:border-primary/10 bg-base-200/20"
+								onclick={() => openExplorer(explorerPath + pathSep + dir)}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary/40 group-hover:text-primary transition-colors"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+								<span class="text-[10px] font-bold truncate text-base-content/80">{dir}</span>
+							</button>
+						{/each}
+					</div>
+
+					<div class="p-5 border-t border-base-content/10 bg-base-200/50 flex justify-between gap-4">
+						<button type="button" class="btn btn-ghost rounded-xl px-6 text-xs uppercase" onclick={() => showExplorer = false}>Cancel</button>
+						<button type="button" class="btn btn-primary rounded-xl px-6 font-black text-xs uppercase" onclick={selectFolder}>Select This Folder</button>
+					</div>
+				</div>
 			</div>
 		{/if}
 
-		<!-- Form Fields -->
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-			<div class="form-control">
-				<label class="label pt-0" for="duty-title">
-					<span class="label-text font-black uppercase text-[10px] opacity-50 flex items-center gap-2">
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-						Task Heading
-					</span>
-				</label>
-				<input
-					id="duty-title"
-					type="text"
-					bind:value={title}
-					placeholder="Short identifier (e.g. Auth Fix)"
-					class="input input-bordered w-full font-bold focus:border-primary transition-all rounded-xl"
-					required
-				/>
-			</div>
-
-			<div class="form-control">
-				<label class="label pt-0" for="duty-desc">
-					<span class="label-text font-black uppercase text-[10px] opacity-50 flex items-center gap-2">
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-						Title
-					</span>
-				</label>
-				<input
-					id="duty-desc"
-					type="text"
-					bind:value={description}
-					placeholder="Main description of this work"
-					class="input input-bordered w-full focus:border-primary transition-all rounded-xl"
-				/>
-			</div>
-		</div>
-
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-			<div class="form-control">
-				<label class="label pt-0" for="duty-files">
-					<span class="label-text font-black uppercase text-[10px] opacity-50 flex items-center gap-2">
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-						Impacted Files
-					</span>
-				</label>
-				<input
-					id="duty-files"
-					type="text"
-					bind:value={filesInput}
-					placeholder="index.ts, component.svelte..."
-					class="input input-bordered w-full font-mono text-xs focus:border-primary transition-all rounded-xl"
-				/>
-			</div>
-
-			<div class="form-control">
-				<label class="label pt-0" for="duty-functions">
-					<span class="label-text font-black uppercase text-[10px] opacity-50 flex items-center gap-2">
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-						Target Functions
-					</span>
-				</label>
-				<input
-					id="duty-functions"
-					type="text"
-					bind:value={functionsInput}
-					placeholder="functionName, variable..."
-					class="input input-bordered w-full font-mono text-xs focus:border-primary transition-all rounded-xl"
-				/>
-			</div>
-		</div>
-
-		<div class="form-control mb-6">
-			<label class="label pt-0" for="duty-notes">
-				<span class="label-text font-black uppercase text-[10px] opacity-50 flex items-center gap-2">
-					<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-					Detail Code
-				</span>
-			</label>
-			<textarea
-				id="duty-notes"
-				bind:value={notes}
-				placeholder="Deep dive logic reminders or technical notes..."
-				class="textarea textarea-bordered w-full focus:border-primary transition-all rounded-xl min-h-[150px] font-mono text-xs"
-			></textarea>
-		</div>
-
-		<div class="flex flex-col sm:flex-row items-center justify-between gap-6 mt-10 p-6 bg-base-200/50 rounded-[2rem] border border-base-300">
-			<div class="form-control">
-				<label class="label cursor-pointer gap-4">
-					<div class="flex flex-col text-left leading-tight">
-						<span class="text-xs font-black uppercase tracking-tight">Push to Git Commit</span>
-						<span class="text-[10px] opacity-50">Auto commit with Detail Code as message</span>
-					</div>
-					<input type="checkbox" class="toggle toggle-primary" bind:checked={includeGitCommit} disabled={!projectPath} />
-				</label>
-			</div>
-
-			<button
-				type="submit"
-				class="btn btn-primary px-12 rounded-full font-black shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-transform uppercase tracking-widest gap-3 w-full sm:w-auto {isCommitting ? 'loading' : ''}"
-				disabled={isCommitting}
-			>
-				{#if !isCommitting}
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-				{/if}
-				Add Ticket
-			</button>
-		</div>
 	</form>
 </div>
 
-<!-- ── Drag Ghost ─────────────────────────────────────────────────────── -->
+<!-- ── High-Tech Drag Ghost ── -->
 {#if dragState && dragHasMoved}
 	<div
 		class="pointer-events-none fixed top-0 left-0 z-[9999] select-none"
-		style="transform: translate({dragState.curX - dragState.offsetX}px, {dragState.curY - dragState.offsetY}px) rotate(2.5deg) scale(1.06); will-change: transform; width: {dragState.cardW}px;"
+		style="transform: translate({dragState.curX - dragState.offsetX}px, {dragState.curY - dragState.offsetY}px) rotate(1.5deg) scale(1.03); will-change: transform; width: {dragState.cardW}px;"
 	>
-		<div class="bg-base-100 rounded-2xl px-4 py-3 border-2 border-primary shadow-[0_24px_60px_rgba(0,0,0,0.28),0_2px_8px_rgba(0,0,0,0.12)]">
+		<div class="bg-black/90 text-white rounded-xl p-3 border-2 border-primary shadow-[0_15px_45px_rgba(0,0,0,0.5)]">
 			<div class="flex items-center gap-2 mb-1">
 				<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse shrink-0"></span>
-				<span class="font-mono text-xs font-bold truncate">{dragState.file.split(/[/\\]/).pop()}</span>
+				<span class="font-mono text-[10px] font-bold truncate text-white/90">{dragState.file.split(/[/\\]/).pop()}</span>
 			</div>
-			<div class="font-mono text-[9px] opacity-40 truncate mb-1">{dragState.file}</div>
-			<div class="text-[9px] font-black uppercase tracking-widest opacity-50 flex items-center gap-1">
+			<div class="font-mono text-[8px] text-white/40 truncate mb-1.5">{dragState.file}</div>
+			<div class="text-[8px] font-mono font-black uppercase tracking-wider text-primary flex items-center gap-1 leading-none">
 				{#if dragState.fromStaged}
 					<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
 					move to detected
@@ -1449,16 +1480,17 @@
 
 <style>
 	.custom-scrollbar::-webkit-scrollbar {
-		width: 4px;
+		width: 5px;
+		height: 5px;
 	}
 	.custom-scrollbar::-webkit-scrollbar-track {
 		background: transparent;
 	}
 	.custom-scrollbar::-webkit-scrollbar-thumb {
-		background: #888;
-		border-radius: 10px;
+		background: rgba(var(--bc-rgb, 120, 120, 120), 0.15);
+		border-radius: 99px;
 	}
 	.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-		background: #555;
+		background: rgba(var(--bc-rgb, 120, 120, 120), 0.35);
 	}
 </style>
