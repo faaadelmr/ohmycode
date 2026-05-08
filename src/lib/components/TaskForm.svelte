@@ -173,6 +173,27 @@
 		});
 	};
 
+	const downloadBackupFile = (task: any, file: string) => {
+		if (!task.projectPath) return;
+		const params = new URLSearchParams({
+			projectPath: task.projectPath,
+			file,
+			...(task.logFolderName ? { logFolder: task.logFolderName } : { createdAt: String(task.createdAt) })
+		});
+		window.open(`/api/log/download?${params}`, '_blank');
+	};
+
+	let openSavedDiffs = $state<Record<string, boolean>>({});
+
+	const toggleSavedFileDiff = (taskId: string, file: string) => {
+		const key = `${taskId}-${file}`;
+		openSavedDiffs[key] = !openSavedDiffs[key];
+	};
+
+	const isSavedFileDiffOpen = (taskId: string, file: string) => {
+		return !!openSavedDiffs[`${taskId}-${file}`];
+	};
+
 	// Derived lists of logged duties filtered by search query
 	const filteredLoggedDuties = $derived(
 		kanbanStore.tasks.filter(t => 
@@ -1558,10 +1579,98 @@
 								<h3 class="text-xs font-black uppercase tracking-wider opacity-60">Recent Audited Log History ({kanbanStore.tasks.length} items)</h3>
 							</div>
 
-							<div class="flex-1 overflow-y-auto max-h-[60vh] vscode-scrollbar pr-1 flex flex-col gap-1">
+							<div class="flex-1 overflow-y-auto max-h-[60vh] vscode-scrollbar pr-1 flex flex-col gap-2">
 								{#each kanbanStore.tasks as task (task.id)}
-									<!-- Reusing the exact card layout inside the Welcome Screen dashboard -->
-									<KanbanCard {task} />
+									<!-- Ultra-polished compact, interactive, VS Code styled commit row -->
+									<div 
+										onclick={() => openLogTab(task)}
+										onkeydown={(e) => e.key === 'Enter' && openLogTab(task)}
+										role="button"
+										tabindex="0"
+										class="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 bg-base-200/40 hover:bg-base-200/90 border border-base-content/5 hover:border-primary/20 rounded-xl cursor-pointer transition-all group select-none relative"
+									>
+										<!-- Left Part: Monospace Hash + Title + Subtitle preview -->
+										<div class="flex items-start gap-3 min-w-0">
+											<div class="flex flex-col items-center gap-1 shrink-0 mt-0.5">
+												<!-- Short Monospace Hash Badge -->
+												<span class="font-mono text-[10px] font-bold bg-primary/10 text-primary border border-primary/25 rounded px-1.5 py-0.5 tracking-wider uppercase">
+													{task.id.slice(0, 7)}
+												</span>
+												<!-- Active Indicator Dot -->
+												<span class="w-1.5 h-1.5 rounded-full bg-success shadow shadow-success/30" title="Synchronized"></span>
+											</div>
+
+											<div class="flex flex-col text-left min-w-0">
+												<div class="flex items-center gap-2 flex-wrap">
+													<!-- Title / Conventional Commit Summary -->
+													<span class="text-[12px] font-bold text-base-content group-hover:text-primary transition-colors truncate max-w-md">
+														{task.title}
+													</span>
+													<!-- Branch Badge -->
+													<span class="badge font-mono text-[9px] bg-secondary/10 text-secondary border-secondary/20 px-1.5 h-4 font-bold">
+														main
+													</span>
+												</div>
+												<!-- Description / Scope Context -->
+												{#if task.description || task.notes}
+													<span class="text-[11px] opacity-50 font-medium truncate max-w-xl mt-0.5 leading-relaxed">
+														{task.description ? task.description + ' — ' : ''}{task.notes || ''}
+													</span>
+												{/if}
+											</div>
+										</div>
+
+										<!-- Right Part: Backups count, Diff changes count, and Actions -->
+										<div class="flex items-center gap-3 shrink-0 self-end md:self-center">
+											<!-- Date/Time formatted cleanly -->
+											<span class="text-[10px] opacity-40 font-mono font-bold uppercase tracking-wider">
+												{new Date(task.createdAt).toLocaleString('en-GB', {
+													day: '2-digit',
+													month: 'short',
+													hour: '2-digit',
+													minute: '2-digit'
+												})}
+											</span>
+
+											<!-- Impacted file counts badge -->
+											<div class="badge badge-sm font-semibold opacity-75 gap-1 py-2 px-2.5 bg-base-100 border-base-content/10">
+												<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+												{task.files.length} backups
+											</div>
+
+											<!-- Interactive action icon overlays (Fades in on hover) -->
+											<div class="flex items-center gap-1 pl-1 border-l border-base-content/10">
+												<!-- Open audit tab button -->
+												<button 
+													onclick={(e) => { e.stopPropagation(); openLogTab(task); }}
+													class="btn btn-xs btn-ghost btn-square text-base-content/60 hover:text-primary hover:bg-primary/10 transition-colors"
+													title="View Detailed Diff & Backups"
+												>
+													<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+												</button>
+
+												<!-- Download backup package trigger -->
+												{#if task.files.length > 0}
+													<button 
+														onclick={(e) => { e.stopPropagation(); downloadBackupFile(task, task.files[0]); }}
+														class="btn btn-xs btn-ghost btn-square text-base-content/60 hover:text-success hover:bg-success/10 transition-colors"
+														title="Download backup version of first file"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+													</button>
+												{/if}
+
+												<!-- Delete Log button -->
+												<button 
+													onclick={(e) => { e.stopPropagation(); kanbanStore.removeTask(task.id); }}
+													class="btn btn-xs btn-ghost btn-square text-error/60 hover:text-error hover:bg-error/10 transition-colors"
+													title="Delete Log Entry"
+												>
+													<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+												</button>
+											</div>
+										</div>
+									</div>
 								{:else}
 									<div class="py-20 text-center opacity-30 border-2 border-dashed border-base-content/15 rounded-3xl mt-2 flex flex-col items-center justify-center gap-3 bg-base-200/10">
 										<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
@@ -1809,27 +1918,91 @@
 													<h4 class="text-[10px] font-mono font-black uppercase tracking-widest opacity-45">BACKED-UP MODIFICATIONS</h4>
 													<div class="flex flex-col gap-2">
 														{#each task.files as file}
-															<div class="flex items-center justify-between p-3.5 bg-base-200/40 hover:bg-base-200/60 transition-all border border-base-content/10 rounded-xl">
-																<div class="flex flex-col">
-																	<span class="font-mono text-xs font-semibold">{file.split(/[/\\]/).pop()}</span>
-																	<span class="font-mono text-[9px] opacity-45 mt-0.5">{file}</span>
+															<div class="flex flex-col gap-2 p-3.5 bg-base-200/40 border border-base-content/10 rounded-xl">
+																<div class="flex items-center justify-between">
+																	<div class="flex flex-col text-left">
+																		<span class="font-mono text-xs font-semibold">{file.split(/[/\\]/).pop()}</span>
+																		<span class="font-mono text-[9px] opacity-45 mt-0.5">{file}</span>
+																	</div>
+
+																	<div class="flex items-center gap-1.5">
+																		<!-- View Saved Diff button if diff exists -->
+																		{#if task.fileDiffs && task.fileDiffs[file]}
+																			<button 
+																				onclick={() => toggleSavedFileDiff(task.id, file)}
+																				class="btn btn-xs {isSavedFileDiffOpen(task.id, file) ? 'btn-primary' : 'btn-outline border-base-content/15'} rounded-md font-bold text-[10px] uppercase tracking-wider"
+																			>
+																				{isSavedFileDiffOpen(task.id, file) ? 'Hide Saved Diff' : 'View Saved Diff'}
+																			</button>
+																		{/if}
+
+																		<!-- Download backups trigger -->
+																		<button 
+																			onclick={() => {
+																				if (!task.projectPath) return;
+																				const params = new URLSearchParams({
+																					projectPath: task.projectPath,
+																					file,
+																					...(task.logFolderName ? { logFolder: task.logFolderName } : { createdAt: String(task.createdAt) })
+																				});
+																				window.open(`/api/log/download?${params}`, '_blank');
+																			}}
+																			class="btn btn-xs btn-outline rounded-md font-bold text-[10px] uppercase tracking-wider"
+																		>
+																			Download Backup
+																		</button>
+																	</div>
 																</div>
 
-																<!-- Download backups trigger -->
-																<button 
-																	onclick={() => {
-																		if (!task.projectPath) return;
-																		const params = new URLSearchParams({
-																			projectPath: task.projectPath,
-																			file,
-																			...(task.logFolderName ? { logFolder: task.logFolderName } : { createdAt: String(task.createdAt) })
-																		});
-																		window.open(`/api/log/download?${params}`, '_blank');
-																	}}
-																	class="btn btn-xs btn-outline rounded-md font-bold text-[10px] uppercase tracking-wider"
-																>
-																	Download Backup
-																</button>
+																<!-- Expandable inline code-diff view of what has changed -->
+																{#if task.fileDiffs && task.fileDiffs[file] && isSavedFileDiffOpen(task.id, file)}
+																	<div class="mt-3 border border-base-content/10 bg-[#1e1e1e] text-white rounded-lg overflow-hidden text-left shadow-inner">
+																		<div class="bg-base-300 px-3 py-1.5 text-[10px] font-mono uppercase font-bold opacity-65 flex justify-between items-center border-b border-base-content/10">
+																			<span>Saved Diff Viewer</span>
+																			<span class="text-[9px] text-success font-mono font-bold">
+																				+{task.fileDiffs[file].split('\n').filter((l: string) => l.startsWith('+') && !l.startsWith('+++')).length} insertions
+																				<span class="opacity-40 font-mono">|</span>
+																				<span class="text-error font-mono">-{task.fileDiffs[file].split('\n').filter((l: string) => l.startsWith('-') && !l.startsWith('---')).length} deletions</span>
+																			</span>
+																		</div>
+																		<div class="p-2 font-mono text-[11px] leading-relaxed select-text overflow-x-auto max-h-[40vh] vscode-scrollbar">
+																			{#each buildDiffEditorRows(task.fileDiffs[file]) as row (row.key)}
+																				<div class="flex min-h-[18px]">
+																					{#if row.kind === 'hunk'}
+																						<div class="w-full bg-[#2d2d2d] text-base-content/40 py-0.5 px-3 font-semibold select-none font-mono text-[9px]">
+																							{row.content}
+																						</div>
+																					{:else if row.kind === 'remove'}
+																						<div class="bg-[#3a1d1d] text-[#ff8080] w-full flex items-center py-0.5">
+																							<span class="w-8 opacity-30 text-right pr-2 shrink-0 select-none text-[9px] font-mono">{row.oldNumber}</span>
+																							<span class="w-8 shrink-0 font-mono text-[9px]"></span>
+																							<span class="opacity-40 pr-2 select-none font-mono">-</span>
+																							<span class="whitespace-pre font-mono">{row.content}</span>
+																						</div>
+																					{:else if row.kind === 'add'}
+																						<div class="bg-[#1b2f1c] text-[#80ff80] w-full flex items-center py-0.5">
+																							<span class="w-8 shrink-0 font-mono text-[9px]"></span>
+																							<span class="w-8 opacity-30 text-right pr-2 shrink-0 select-none text-[9px] font-mono">{row.newNumber}</span>
+																							<span class="opacity-40 pr-2 select-none font-mono">+</span>
+																							<span class="whitespace-pre font-mono">{row.content}</span>
+																						</div>
+																					{:else}
+																						<div class="bg-transparent opacity-60 w-full flex items-center py-0.5">
+																							<span class="w-8 opacity-20 text-right pr-2 shrink-0 select-none text-[9px] font-mono">{row.oldNumber}</span>
+																							<span class="w-8 opacity-20 text-right pr-2 shrink-0 select-none text-[9px] font-mono">{row.newNumber}</span>
+																							<span class="w-3 shrink-0 font-mono text-[9px]"></span>
+																							<span class="whitespace-pre font-mono">{row.content}</span>
+																						</div>
+																					{/if}
+																				</div>
+																			{:else}
+																				<div class="p-4 whitespace-pre font-mono text-xs opacity-40">
+																					{task.fileDiffs[file]}
+																				</div>
+																			{/each}
+																		</div>
+																	</div>
+																{/if}
 															</div>
 														{/each}
 													</div>
