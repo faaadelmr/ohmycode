@@ -54,7 +54,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			}
 
 			// 2. If it has UNSTAGED changes (Y is not space) or is UNTRACKED (X and Y are ??)
-			if (y !== ' ' || (x === '?' && y === '?')) {
+			if (y !== ' ' || (x === '?' && (y as string) === '?')) {
 				unstagedFiles.push({
 					file: filePath,
 					status: y === '?' ? '?' : y,

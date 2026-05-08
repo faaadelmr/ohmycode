@@ -3,6 +3,9 @@
 	import { onMount } from 'svelte';
 	import { fade, slide, fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
+	import { theme, themes } from '$lib/theme';
+	import KanbanCard from './KanbanCard.svelte';
+	import SettingsModal from './SettingsModal.svelte';
 
 	let title = $state('');
 	let description = $state('');
@@ -30,6 +33,7 @@
 		functions: string[];
 		type: string;
 		diff: string;
+		status?: string;
 		stats: { additions: number; deletions: number };
 		isStaged?: boolean;
 		selected?: boolean;
@@ -105,6 +109,107 @@
 		                           'border-dashed border-warning/40 bg-warning/5'
 	);
 
+	// ── VS Code IDE States ────────────────────────────────────────────────
+	let activeSidebar = $state<'source-control' | 'history' | 'explorer' | 'settings'>('source-control');
+	let isSidebarCollapsed = $state(false);
+	let showSettingsModal = $state(false);
+	let diffViewType = $state<'split' | 'inline'>('split');
+	let sidebarSearchQuery = $state('');
+
+	type Tab = {
+		id: string;
+		type: 'welcome' | 'diff' | 'log';
+		title: string;
+		file?: GitChangeItem;
+		isStaged?: boolean;
+		task?: any;
+	};
+
+	let openTabs = $state<Tab[]>([
+		{ id: 'welcome', type: 'welcome', title: 'Welcome' }
+	]);
+	let activeTabId = $state<string>('welcome');
+
+	const openTab = (tab: Tab) => {
+		if (!openTabs.some(t => t.id === tab.id)) {
+			openTabs.push(tab);
+		}
+		activeTabId = tab.id;
+	};
+
+	const closeTab = (e: MouseEvent, tabId: string) => {
+		e.stopPropagation();
+		const idx = openTabs.findIndex(t => t.id === tabId);
+		if (idx === -1) return;
+
+		openTabs.splice(idx, 1);
+		if (activeTabId === tabId) {
+			if (openTabs.length > 0) {
+				activeTabId = openTabs[openTabs.length - 1].id;
+			} else {
+				openTabs.push({ id: 'welcome', type: 'welcome', title: 'Welcome' });
+				activeTabId = 'welcome';
+			}
+		}
+	};
+
+	const openFileDiffTab = (item: GitChangeItem, isStaged: boolean) => {
+		openTab({
+			id: `diff-${item.file}-${isStaged ? 'staged' : 'unstaged'}`,
+			type: 'diff',
+			title: item.file.split(/[/\\]/).pop() || item.file,
+			file: item,
+			isStaged
+		});
+		startInlineEdit(item);
+	};
+
+	const openLogTab = (task: any) => {
+		openTab({
+			id: `log-${task.id}`,
+			type: 'log',
+			title: `Log: ${task.description || task.title}`,
+			task
+		});
+	};
+
+	// Derived lists of logged duties filtered by search query
+	const filteredLoggedDuties = $derived(
+		kanbanStore.tasks.filter(t => 
+			!sidebarSearchQuery ||
+			t.title.toLowerCase().includes(sidebarSearchQuery.toLowerCase()) ||
+			(t.description && t.description.toLowerCase().includes(sidebarSearchQuery.toLowerCase())) ||
+			(t.notes && t.notes.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))
+		)
+	);
+
+	// Total productivity indicators
+	const productivityStats = $derived.by(() => {
+		const tasks = kanbanStore.tasks;
+		let filesCount = 0;
+		let additions = 0;
+		let deletions = 0;
+
+		tasks.forEach(t => {
+			filesCount += t.files.length;
+			if (t.fileDiffs) {
+				Object.values(t.fileDiffs).forEach(diff => {
+					diff.split('\n').forEach(line => {
+						if (line.startsWith('+') && !line.startsWith('+++')) additions++;
+						if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+					});
+				});
+			}
+		});
+
+		return {
+			totalLogged: tasks.length,
+			filesCount,
+			additions,
+			deletions
+		};
+	});
+
 	onMount(() => {
 		const savedPath = localStorage.getItem('last-project-path');
 		if (savedPath) {
@@ -169,7 +274,7 @@
 		fallbackInterval = setInterval(() => {
 			console.log('[Watcher] Polling for changes...');
 			syncWithGit();
-			watcherStatus = 'live'; // Represent active polling as live-ish
+			watcherStatus = 'live'; 
 		}, 10000);
 	};
 
@@ -224,6 +329,18 @@
 				stagedChanges = syncList(data.stagedChanges, stagedChanges);
 				recentCommits = data.recentCommits;
 				lastSyncTime = new Date().toLocaleTimeString();
+
+				// Automatically update currently open Diff tab structures if their corresponding items have changed
+				openTabs.forEach((tab, index) => {
+					if (tab.type === 'diff' && tab.file) {
+						const isStaged = tab.isStaged;
+						const list = isStaged ? stagedChanges : suggestions;
+						const match = list.find(x => x.file === tab.file?.file);
+						if (match) {
+							openTabs[index] = { ...tab, file: match };
+						}
+					}
+				});
 			}
 		} catch (e) {
 			console.error('Failed to sync with git', e);
@@ -467,8 +584,6 @@
 	};
 
 	// Conventional Commits inference
-	// Spec: https://www.conventionalcommits.org/
-
 	const CC_TYPES: Record<string, { label: string; color: string }> = {
 		feat:     { label: 'feat',     color: 'bg-primary/15 text-primary border-primary/30' },
 		fix:      { label: 'fix',      color: 'bg-error/15 text-error border-error/30' },
@@ -492,7 +607,6 @@
 		const files = items.map(s => s.file.toLowerCase());
 		const types = items.map(s => s.type.toLowerCase());
 
-		// --- File-pattern detection ---
 		const isTest = files.some(f =>
 			/\.(test|spec)\.[jt]sx?$/.test(f) ||
 			/\/(tests?|__tests?__)\//i.test(f)
@@ -519,13 +633,11 @@
 		const isStyle = files.some(f => /\.(css|scss|sass|less|styl)$/.test(f));
 		const isPerf = files.some(f => /(perf|performance|optim|bench)/i.test(f));
 
-		// --- Change-type detection ---
 		const hasAdded = types.some(t => t.includes('added') || t.includes('new'));
 		const hasDeleted = types.some(t => t.includes('deleted'));
 		const hasModified = types.some(t => t.includes('modified'));
 		const hasRenamed = types.some(t => t.includes('renamed'));
 
-		// --- Scope: nearest common parent dir ---
 		const scope = (() => {
 			if (items.length === 1) {
 				const parts = items[0].file.split(/[/\\]/);
@@ -541,7 +653,6 @@
 			return common;
 		})();
 
-		// --- Commit type (priority order) ---
 		let type: string;
 		if (isCi)                                    type = 'ci';
 		else if (isBuild)                            type = 'build';
@@ -556,7 +667,6 @@
 		else if (hasModified)                        type = 'fix';
 		else                                         type = 'chore';
 
-		// --- Summary verb ---
 		const verb =
 			hasAdded && !hasModified ? 'add' :
 			hasDeleted && !hasAdded  ? 'remove' :
@@ -686,7 +796,6 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ projectPath, file, stage: toStaged })
 			});
-			// Watcher handles the sync
 		} catch {
 			syncWithGit();
 		}
@@ -696,7 +805,6 @@
 		e.stopPropagation();
 		if (!projectPath) return;
 
-		// Optimistic UI update
 		if (toStaged) {
 			const idx = suggestions.findIndex((s) => s.file === fileName);
 			if (idx !== -1) {
@@ -721,7 +829,6 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ projectPath, file: fileName, stage: toStaged })
 			});
-			// Watcher handles the sync
 		} catch {
 			syncWithGit();
 		}
@@ -730,7 +837,6 @@
 	const moveAll = async (toStaged: boolean) => {
 		if (!projectPath) return;
 
-		// Optimistic UI update
 		if (toStaged) {
 			stagedChanges.push(...suggestions.map((s) => ({ ...s, isStaged: true, selected: true })));
 			suggestions.length = 0;
@@ -747,7 +853,6 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ projectPath, all: true, stage: toStaged })
 			});
-			// Watcher handles the sync
 		} catch {
 			syncWithGit();
 		}
@@ -777,6 +882,7 @@
 					suggestions = suggestions.filter((s) => s.file !== fileName);
 				}
 				updateFormFromSelected();
+				syncWithGit();
 			} else {
 				errorMessage = `Discard failed: ${data.error}`;
 			}
@@ -785,8 +891,15 @@
 		}
 	};
 
-	const handleSubmit = async (e: SubmitEvent) => {
-		e.preventDefault();
+	const handleCommitKeyDown = (e: KeyboardEvent) => {
+		if (e.ctrlKey && e.key === 'Enter') {
+			e.preventDefault();
+			handleSubmit();
+		}
+	};
+
+	const handleSubmit = async (e?: SubmitEvent) => {
+		if (e) e.preventDefault();
 		if (!title.trim()) return;
 
 		const files = filesInput
@@ -848,612 +961,971 @@
 		suggestions = suggestions.map(s => ({ ...s, selected: false, showDiff: false }));
 		stagedChanges = stagedChanges.map(s => ({ ...s, selected: false, showDiff: false }));
 		errorMessage = '';
+		
+		// Return to welcome dashboard
+		activeTabId = 'welcome';
+		syncWithGit();
 	};
 </script>
 
-<div class="w-full mb-12 relative overflow-visible rounded-[2rem] p-0.5 bg-gradient-to-br from-base-300 via-base-100 to-base-300/40 shadow-2xl">
-	<!-- Ambient Backlight -->
-	<div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 rounded-[2rem] blur-2xl opacity-75 -z-10 pointer-events-none animate-pulse"></div>
-
-	<form onsubmit={handleSubmit} class="w-full flex flex-col xl:grid xl:grid-cols-12 gap-6 bg-base-100/80 backdrop-blur-xl rounded-[2rem] p-6 sm:p-8 overflow-hidden relative">
+<!-- VS Code Style Root Layout -->
+<div class="h-screen w-screen flex flex-col vscode-font overflow-hidden select-none bg-base-100 text-base-content vscode-noselect">
+	
+	<!-- 2. VS Code Main Workspace Container -->
+	<div class="flex-1 flex overflow-hidden w-full">
 		
-		<!-- Scanlines / Futuristic grid effect -->
-		<div class="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay" style="background-image: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 4px, 6px 100%;"></div>
-
-		<!-- UPPER DECK: High-Tech Project Status HUD -->
-		<div class="col-span-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-base-content/10">
-			<div class="flex flex-wrap items-center gap-4">
-				<div class="flex items-center gap-3">
-					<div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 text-primary shadow-lg shadow-primary/10">
-						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-					</div>
-					<div>
-						<h2 class="text-xl font-black uppercase tracking-tight text-base-content bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-							Git Control Deck
-						</h2>
-						<p class="text-[9px] font-mono tracking-widest opacity-50 uppercase">v2.1 // System Active</p>
-					</div>
-				</div>
-
-				<!-- Watcher Status Indicator -->
-				{#if projectPath}
-					<div
-						class="badge badge-sm gap-1.5 py-3 px-3.5 font-mono font-bold uppercase text-[9px] border border-base-content/10 shadow-sm transition-all duration-500 {watcherStatus === 'live' ? 'bg-success/10 text-success border-success/20' : watcherStatus === 'connecting' ? 'bg-warning/10 text-warning border-warning/20' : 'bg-error/10 text-error border-error/20'}"
-						title={watcherStatus === 'live' ? `Real-time monitoring active. Last sync: ${lastSyncTime}` : 'Connecting to project...'}
-					>
-						<span class="w-1.5 h-1.5 rounded-full {watcherStatus === 'live' ? 'bg-success animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : watcherStatus === 'connecting' ? 'bg-warning animate-bounce' : 'bg-error'}"></span>
-						{watcherStatus}
-					</div>
-				{/if}
-			</div>
-
-			<div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
-				{#if projectPath}
-					<div class="bg-base-200/50 hover:bg-base-200 px-4 py-2 rounded-xl border border-base-content/10 flex items-center gap-2 font-mono text-[10px] opacity-80 max-w-full md:max-w-xs truncate shadow-inner">
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary shrink-0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-						<span class="truncate">{projectPath}</span>
-					</div>
-				{/if}
-
-				<button
-					type="button"
-					class="btn btn-primary btn-sm rounded-xl gap-2 font-black uppercase text-[10px] tracking-wider transition-all hover:scale-105 hover:shadow-lg hover:shadow-primary/25 active:scale-95"
-					onclick={() => openExplorer(projectPath)}
+		<!-- 2.1 Activity Bar (Far Left) -->
+		<aside class="w-12 bg-base-300 border-r border-base-content/10 flex flex-col justify-between items-center py-2 shrink-0 select-none">
+			<div class="flex flex-col gap-3.5 items-center w-full">
+				<!-- Explorer Icon -->
+				<button 
+					onclick={() => { activeSidebar = 'explorer'; isSidebarCollapsed = false; }} 
+					class="relative p-2.5 rounded-lg text-base-content/50 hover:text-base-content transition-colors group {activeSidebar === 'explorer' && !isSidebarCollapsed ? 'text-primary bg-base-content/5' : ''}"
+					title="Explorer"
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-					Pick Folder
+					<div class="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r transition-all scale-y-0 group-hover:scale-y-75 {activeSidebar === 'explorer' && !isSidebarCollapsed ? 'scale-y-100' : ''}"></div>
+					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
 				</button>
-			</div>
-		</div>
 
-		{#if errorMessage}
-			<div class="col-span-12 alert alert-error py-3 px-4 text-xs rounded-xl flex items-center gap-3 border border-error/20 bg-error/10 text-error-content shadow-lg shadow-error/5" transition:fade>
-				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4 text-error" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-				<span class="font-bold">{errorMessage}</span>
-			</div>
-		{/if}
-
-		{#if successMessage}
-			<div class="col-span-12 alert alert-success py-3 px-4 text-xs rounded-xl flex items-center gap-3 border border-success/20 bg-success/10 text-success-content shadow-lg shadow-success/5" transition:fade>
-				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4 text-success" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2l4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-				<span class="font-bold">{successMessage}</span>
-			</div>
-		{/if}
-
-		<!-- MAIN ROW SPLIT - LEFT (COMMIT / TICKET FORM) & RIGHT (VS CODE WORKSPACE STAGE) -->
-		
-		<!-- LEFT SIDEBAR: Commit Console Panel (Col Span 5) -->
-		<div class="col-span-12 xl:col-span-5 flex flex-col gap-5 bg-base-200/30 p-5 rounded-2xl border border-base-content/5 relative overflow-visible">
-			<div class="absolute -top-3 left-4 bg-base-100 px-3 py-1 rounded-md border border-base-content/10 font-mono text-[9px] font-black uppercase tracking-wider text-primary">
-				CONSOLE_DECK
-			</div>
-
-			<!-- Form Fields -->
-			<div class="grid grid-cols-1 gap-4 mt-2">
-				<div class="form-control">
-					<label class="label py-1" for="duty-title">
-						<span class="label-text font-mono font-black uppercase text-[10px] opacity-60 flex items-center gap-1.5 text-primary">
-							<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-							Task Heading
-						</span>
-					</label>
-					<input
-						id="duty-title"
-						type="text"
-						bind:value={title}
-						placeholder="E.g., Auth: fix signin flow"
-						class="input input-bordered w-full font-bold focus:border-primary focus:ring-1 focus:ring-primary transition-all rounded-xl text-xs bg-base-100/50"
-						required
-					/>
-				</div>
-
-				<div class="form-control">
-					<label class="label py-1" for="duty-files">
-						<span class="label-text font-mono font-black uppercase text-[10px] opacity-60 flex items-center gap-1.5 text-primary">
-							<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-							Impacted Files
-						</span>
-					</label>
-					<input
-						id="duty-files"
-						type="text"
-						bind:value={filesInput}
-						placeholder="index.ts, app.svelte..."
-						class="input input-bordered w-full font-mono text-[10px] focus:border-primary focus:ring-1 focus:ring-primary transition-all rounded-xl bg-base-100/50"
-					/>
-				</div>
-			</div>
-
-			<div class="form-control flex-1 flex flex-col">
-				<label class="label py-1" for="duty-notes">
-					<span class="label-text font-mono font-black uppercase text-[10px] opacity-60 flex items-center gap-1.5 text-primary">
-						<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-						Commit Notes
-					</span>
-				</label>
-				<textarea
-					id="duty-notes"
-					bind:value={notes}
-					placeholder="Detailed logic changes (one bullet point per line)..."
-					class="textarea textarea-bordered w-full focus:border-primary focus:ring-1 focus:ring-primary transition-all rounded-xl flex-1 min-h-[140px] font-mono text-[10px] bg-base-100/50 custom-scrollbar"
-				></textarea>
-			</div>
-
-			<!-- Action Panel & Trigger -->
-			<div class="flex flex-col gap-4 mt-2 p-4 bg-base-100/40 rounded-xl border border-base-content/5">
-				<div class="form-control flex flex-row items-center justify-between">
-					<div class="flex flex-col text-left">
-						<span class="text-[10px] font-mono font-black uppercase tracking-tight text-primary">Git Commit Push</span>
-						<span class="text-[9px] opacity-50">Auto-commit to git alongside saving task log</span>
-					</div>
-					<input type="checkbox" class="toggle toggle-primary toggle-sm" bind:checked={includeGitCommit} disabled={!projectPath} />
-				</div>
-
-				<button
-					type="submit"
-					class="btn btn-primary w-full rounded-xl font-black uppercase tracking-wider text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-primary/20 {isCommitting ? 'loading' : ''}"
-					disabled={isCommitting}
+				<!-- Source Control Icon -->
+				<button 
+					onclick={() => { activeSidebar = 'source-control'; isSidebarCollapsed = false; }} 
+					class="relative p-2.5 rounded-lg text-base-content/50 hover:text-base-content transition-colors group {activeSidebar === 'source-control' && !isSidebarCollapsed ? 'text-primary bg-base-content/5' : ''}"
+					title="Source Control"
 				>
-					{#if !isCommitting}
-						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+					<div class="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r transition-all scale-y-0 group-hover:scale-y-75 {activeSidebar === 'source-control' && !isSidebarCollapsed ? 'scale-y-100' : ''}"></div>
+					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M20.39 18.39A5 5 0 0 0 18 13H6"></path><path d="M6 9v6"></path></svg>
+					{#if suggestions.length + stagedChanges.length > 0}
+						<span class="absolute top-1 right-1 badge badge-xs bg-primary text-primary-content font-mono text-[8px] font-bold py-1 px-1.5 min-w-[14px]">
+							{suggestions.length + stagedChanges.length}
+						</span>
 					{/if}
-					Deploy Logs & Commit
+				</button>
+
+				<!-- History/Logs Icon -->
+				<button 
+					onclick={() => { activeSidebar = 'history'; isSidebarCollapsed = false; }} 
+					class="relative p-2.5 rounded-lg text-base-content/50 hover:text-base-content transition-colors group {activeSidebar === 'history' && !isSidebarCollapsed ? 'text-primary bg-base-content/5' : ''}"
+					title="Duty Logs History"
+				>
+					<div class="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r transition-all scale-y-0 group-hover:scale-y-75 {activeSidebar === 'history' && !isSidebarCollapsed ? 'scale-y-100' : ''}"></div>
+					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+				</button>
+
+				<!-- Direct Preferences View -->
+				<button 
+					onclick={() => { activeSidebar = 'settings'; isSidebarCollapsed = false; }} 
+					class="relative p-2.5 rounded-lg text-base-content/50 hover:text-base-content transition-colors group {activeSidebar === 'settings' && !isSidebarCollapsed ? 'text-primary bg-base-content/5' : ''}"
+					title="Settings & Themes"
+				>
+					<div class="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r transition-all scale-y-0 group-hover:scale-y-75 {activeSidebar === 'settings' && !isSidebarCollapsed ? 'scale-y-100' : ''}"></div>
+					<svg width="22" height="22" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path></svg>
 				</button>
 			</div>
-		</div>
 
-		<!-- RIGHT WORKSPACE: VS Code Stage & Diff Deck (Col Span 7) -->
-		<div class="col-span-12 xl:col-span-7 flex flex-col gap-6 relative overflow-visible min-h-[450px]">
-			
-			{#if suggestions.length > 0 || stagedChanges.length > 0}
-				<!-- Grid Layout for Staged & Detected Changes side-by-side inside the workspace area -->
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 h-full" transition:slide>
-					
-					<!-- 1. STAGED CHANGES CONTAINER (Neon Green Trim) -->
-					<div class="flex flex-col bg-base-200/10 rounded-2xl border border-success/15 shadow-sm p-4 h-full min-h-[300px]">
-						<div class="flex justify-between items-center pb-3 border-b border-base-content/5 mb-3">
-							<div class="flex items-center gap-1.5">
-								<span class="w-2 h-2 rounded-full bg-success animate-pulse shadow-[0_0_6px_rgba(34,197,94,0.8)]"></span>
-								<h3 class="text-[10px] font-mono font-black uppercase tracking-wider text-success">Staged Changes</h3>
-							</div>
-							<div class="flex items-center gap-2">
-								{#if stagedChanges.length > 0}
-									<button 
-										type="button" 
-										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
-										onclick={() => moveAll(false)}
-										title="Unstage all files"
-									>
-										Unstage All
-									</button>
-									<span class="text-base-content/20 font-mono text-[9px]">|</span>
-									<button 
-										type="button" 
-										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
-										onclick={() => toggleSelectAll(true)}
-									>
-										{stagedChanges.every(s => s.selected) ? 'Deselect' : 'Select'}
-									</button>
-								{/if}
-								<span class="badge badge-sm bg-success/15 border-success/10 text-success font-mono font-black px-2">{stagedChanges.length}</span>
-							</div>
-						</div>
+			<!-- Settings gear at bottom -->
+			<div class="flex flex-col gap-2 items-center w-full">
+				<button 
+					onclick={() => showSettingsModal = true} 
+					class="p-2.5 rounded-lg text-base-content/50 hover:text-base-content transition-colors"
+					title="System Settings Configuration"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+				</button>
+			</div>
+		</aside>
 
-						<!-- Staging Drop & Scroll Area -->
-						<div 
-							bind:this={stagedZoneEl} 
-							class="flex-1 flex flex-col gap-2.5 overflow-y-auto custom-scrollbar p-1 transition-all duration-300 rounded-xl {stagedZoneClass}"
-						>
-							{#each stagedChanges as s, i (s.id)}
-								<div animate:flip={{ duration: 250 }} class="flex flex-col gap-1.5">
-									{#if dragState?.file === s.file && dragState?.fromStaged === true && dragHasMoved}
-										<div class="h-[52px] rounded-xl border-2 border-dashed border-primary/20 bg-primary/2" in:fade={{ duration: 120 }}></div>
-									{:else}
-										<div
-											role="button"
-											tabindex="0"
-											class="flex items-center justify-between p-3 rounded-xl border select-none cursor-grab active:cursor-grabbing transition-all text-left
-												{s.selected ? 'bg-success/5 border-success/40 shadow-sm' : 'bg-base-100/50 hover:bg-base-200/50 border-base-content/10 shadow-sm'}
-												{droppedFile === s.file ? 'ring-1 ring-success ring-offset-1 ring-offset-base-100' : ''}"
-											style="touch-action: none;"
-											onpointerdown={(e) => onCardPointerDown(e, s.file, true)}
-											onclick={() => toggleSelection(i, true)}
-											onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, true)}
-										>
-											<div class="flex items-center gap-2.5 overflow-hidden flex-1">
-												<input 
-													type="checkbox" 
-													checked={s.selected} 
-													class="checkbox checkbox-xs checkbox-success shrink-0" 
-													onclick={(e) => e.stopPropagation()} 
-													onchange={() => toggleSelection(i, true)}
-													aria-label="Select file"
-												/>
-												<div class="flex flex-col min-w-0 overflow-hidden">
-													<span class="font-mono text-[10px] font-bold truncate text-base-content/90">{s.file.split(/[/\\]/).pop()}</span>
-													<span class="font-mono text-[8px] opacity-40 truncate">{s.file}</span>
-												</div>
-											</div>
-
-											<div class="flex items-center gap-2.5 ml-2 shrink-0">
-												<span class="font-mono text-[8px] font-black leading-none bg-base-100 border border-base-content/5 py-1 px-1.5 rounded">
-													<span class="text-success">+{s.stats.additions}</span>
-													<span class="text-error">-{s.stats.deletions}</span>
-												</span>
-
-												{#if !s.selected}
-													{@const ccType = getFileCommitType(s)}
-													<span class="badge badge-xs border font-mono font-black text-[7px] tracking-wide rounded px-1 {ccBadgeClass(ccType)}">{ccType}</span>
-												{/if}
-
-												<div class="flex items-center gap-1">
-													<button
-														type="button"
-														class="btn btn-xs btn-ghost btn-square text-error hover:bg-error/10 shrink-0"
-														onclick={(e) => moveFile(e, s.file, false)}
-														title="Unstage file"
-													>
-														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-													</button>
-													<button 
-														type="button" 
-														class="btn btn-xs btn-ghost btn-square shrink-0" 
-														onclick={(e) => toggleDiff(e, i, true)} 
-														title="Toggle Diff"
-													>
-														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform duration-200 {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
-													</button>
-												</div>
-											</div>
-										</div>
-									{/if}
-
-									<!-- Inline Code Diff (Directly under the card in the VS Code grid) -->
-									{#if s.showDiff && s.diff}
-										<div class="cyber-diff-pane bg-black/90 text-white rounded-xl p-3 border border-base-content/10 mt-0.5 shadow-inner" transition:slide>
-											{#if editingDiffId === s.id}
-												<div class="flex justify-between items-center mb-2 pb-1.5 border-b border-white/5">
-													<span class="font-mono text-[8px] text-white/40">INLINE_EDITOR: ACTIVE</span>
-													<div class="flex gap-1.5">
-														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-success rounded-md px-2 font-mono" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
-															{savingEditor ? 'Saving' : 'Save'}
-														</button>
-														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-ghost text-white rounded-md px-2 font-mono" onclick={cancelInlineEdit} disabled={savingEditor}>
-															Cancel
-														</button>
-													</div>
-												</div>
-												{#if editingError}
-													<div class="mb-2 p-1.5 rounded bg-error/15 border border-error/20 text-[8px] text-error">
-														{editingError}
-													</div>
-												{/if}
-												{#if loadingEditor}
-													<span class="loading loading-spinner loading-xs"></span>
-												{:else}
-													<div class="max-h-60 overflow-y-auto custom-scrollbar font-mono text-[9px] leading-relaxed">
-														{#each editingRows as row, rowIndex (row.key)}
-															<div class="{row.kind === 'add' ? 'text-emerald-400 bg-emerald-950/20 border-l border-emerald-500' : row.kind === 'remove' ? 'text-rose-400 bg-rose-950/20 border-l border-rose-500' : 'opacity-60'} px-2">
-																{#if row.kind === 'hunk'}
-																	<div class="text-sky-400 font-bold opacity-80">{row.content}</div>
-																{:else if row.editable}
-																	<div class="grid grid-cols-[10px_1fr] gap-1 items-center">
-																		<span class="opacity-50">+</span>
-																		<input
-																			type="text"
-																			value={row.content}
-																			oninput={(e) => updateEditingRow(rowIndex, (e.currentTarget as HTMLInputElement).value)}
-																			class="w-full bg-transparent p-0 border-0 focus:outline-none text-white font-mono text-[9px]"
-																			spellcheck="false"
-																		/>
-																	</div>
-																{:else}
-																	<div>{row.kind === 'remove' ? `-${row.content}` : row.kind === 'context' ? ` ${row.content}` : row.content}</div>
-																{/if}
-															</div>
-														{/each}
-													</div>
-												{/if}
-											{:else}
-												<button
-													type="button"
-													class="w-full text-left font-mono text-[9px] max-h-60 overflow-y-auto custom-scrollbar leading-relaxed"
-													ondblclick={() => startInlineEdit(s)}
-													title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
-												>
-													{#each s.diff.split('\n') as line}
-														<div class="{line.startsWith('+') ? 'text-emerald-400 bg-emerald-950/10' : line.startsWith('-') ? 'text-rose-400 bg-rose-950/10' : 'opacity-40'} px-2">{line}</div>
-													{/each}
-												</button>
-											{/if}
-										</div>
-									{/if}
-								</div>
-							{/each}
-							{#if stagedChanges.length === 0}
-								<div class="flex-1 flex flex-col items-center justify-center opacity-25 py-12 gap-3 border border-dashed border-success/10 rounded-xl">
-									<svg xmlns="http://www.w3.org/2000/svg" class="text-success" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-									<span class="font-mono text-[8px] uppercase tracking-wider">Drag Files here to stage</span>
-								</div>
-							{/if}
-						</div>
+		<!-- 2.2 Sidebar Panel (Collapsible, holds active views) -->
+		{#if !isSidebarCollapsed}
+			<section class="w-[310px] bg-base-200/50 border-r border-base-content/10 flex flex-col h-full shrink-0 select-none" transition:slide={{ axis: 'x', duration: 200 }}>
+				
+				<!-- Sidebar Header -->
+				<div class="h-10 px-4 flex items-center justify-between border-b border-base-content/5 shrink-0">
+					<span class="text-[11px] font-bold uppercase tracking-widest opacity-70">
+						{#if activeSidebar === 'source-control'}
+							Source Control: Git
+						{:else}
+							{activeSidebar}
+						{/if}
+					</span>
+					<div class="flex items-center gap-1.5">
+						{#if activeSidebar === 'source-control'}
+							<button onclick={syncWithGit} class="btn btn-xs btn-ghost btn-square text-base-content/60 hover:text-base-content" title="Refresh Git Status">
+								<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+							</button>
+						{/if}
+						<button onclick={() => isSidebarCollapsed = true} class="btn btn-xs btn-ghost btn-square text-base-content/60 hover:text-base-content" title="Collapse Sidebar Panel">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+						</button>
 					</div>
-
-					<!-- 2. DETECTED CHANGES CONTAINER (Neon Amber Trim) -->
-					<div class="flex flex-col bg-base-200/10 rounded-2xl border border-warning/15 shadow-sm p-4 h-full min-h-[300px]">
-						<div class="flex justify-between items-center pb-3 border-b border-base-content/5 mb-3">
-							<div class="flex items-center gap-1.5">
-								<span class="w-2 h-2 rounded-full bg-warning animate-pulse shadow-[0_0_6px_rgba(234,179,8,0.8)]"></span>
-								<h3 class="text-[10px] font-mono font-black uppercase tracking-wider text-warning">Detected Changes</h3>
-							</div>
-							<div class="flex items-center gap-2">
-								{#if suggestions.length > 0}
-									<button 
-										type="button" 
-										class="text-[9px] font-mono font-bold uppercase tracking-tight text-error opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
-										onclick={() => discardChanges()}
-										title="Discard all changes"
-									>
-										Discard All
-									</button>
-									<span class="text-base-content/20 font-mono text-[9px]">|</span>
-									<button 
-										type="button" 
-										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
-										onclick={() => moveAll(true)}
-										title="Stage all files"
-									>
-										Stage All
-									</button>
-									<span class="text-base-content/20 font-mono text-[9px]">|</span>
-									<button 
-										type="button" 
-										class="text-[9px] font-mono font-bold uppercase tracking-tight opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1"
-										onclick={() => toggleSelectAll(false)}
-									>
-										{suggestions.every(s => s.selected) ? 'Deselect' : 'Select'}
-									</button>
-								{/if}
-								<span class="badge badge-sm bg-warning/15 border-warning/10 text-warning font-mono font-black px-2">{suggestions.length}</span>
-							</div>
-						</div>
-
-						<!-- Detected Drop & Scroll Area -->
-						<div 
-							bind:this={unstagedZoneEl} 
-							class="flex-1 flex flex-col gap-2.5 overflow-y-auto custom-scrollbar p-1 transition-all duration-300 rounded-xl {unstagedZoneClass}"
-						>
-							{#each suggestions as s, i (s.id)}
-								<div animate:flip={{ duration: 250 }} class="flex flex-col gap-1.5">
-									{#if dragState?.file === s.file && dragState?.fromStaged === false && dragHasMoved}
-										<div class="h-[52px] rounded-xl border-2 border-dashed border-primary/20 bg-primary/2" in:fade={{ duration: 120 }}></div>
-									{:else}
-										<div
-											role="button"
-											tabindex="0"
-											class="flex items-center justify-between p-3 rounded-xl border select-none cursor-grab active:cursor-grabbing transition-all text-left
-												{s.selected ? 'bg-warning/5 border-warning/40 shadow-sm' : 'bg-base-100/50 hover:bg-base-200/50 border-base-content/10 shadow-sm'}
-												{droppedFile === s.file ? 'ring-1 ring-success ring-offset-1 ring-offset-base-100' : ''}"
-											style="touch-action: none;"
-											onpointerdown={(e) => onCardPointerDown(e, s.file, false)}
-											onclick={() => toggleSelection(i, false)}
-											onkeydown={(e) => e.key === 'Enter' && toggleSelection(i, false)}
-										>
-											<div class="flex items-center gap-2.5 overflow-hidden flex-1">
-												<input 
-													type="checkbox" 
-													checked={s.selected} 
-													class="checkbox checkbox-xs checkbox-warning shrink-0" 
-													onclick={(e) => e.stopPropagation()} 
-													onchange={() => toggleSelection(i, false)}
-													aria-label="Select file"
-												/>
-												<div class="flex flex-col min-w-0 overflow-hidden">
-													<span class="font-mono text-[10px] font-bold truncate text-base-content/90">{s.file.split(/[/\\]/).pop()}</span>
-													<span class="font-mono text-[8px] opacity-40 truncate">{s.file}</span>
-												</div>
-											</div>
-
-											<div class="flex items-center gap-2.5 ml-2 shrink-0">
-												<span class="font-mono text-[8px] font-black leading-none bg-base-100 border border-base-content/5 py-1 px-1.5 rounded">
-													<span class="text-success">+{s.stats.additions}</span>
-													<span class="text-error">-{s.stats.deletions}</span>
-												</span>
-
-												{#if !s.selected}
-													{@const ccType = getFileCommitType(s)}
-													<span class="badge badge-xs border font-mono font-black text-[7px] tracking-wide rounded px-1 {ccBadgeClass(ccType)}">{ccType}</span>
-												{/if}
-
-												<div class="flex items-center gap-1">
-													<button
-														type="button"
-														class="btn btn-xs btn-ghost btn-square text-success hover:bg-success/10 shrink-0"
-														onclick={(e) => moveFile(e, s.file, true)}
-														title="Stage file"
-													>
-														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-													</button>
-													<button
-														type="button"
-														class="btn btn-xs btn-ghost btn-square text-error hover:bg-error/10 shrink-0"
-														onclick={(e) => { e.stopPropagation(); discardChanges(s.file); }}
-														title="Discard changes"
-													>
-														<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-													</button>
-													<button 
-														type="button" 
-														class="btn btn-xs btn-ghost btn-square shrink-0" 
-														onclick={(e) => toggleDiff(e, i, false)} 
-														title="Toggle Diff"
-													>
-														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="transition-transform duration-200 {s.showDiff ? 'rotate-180 text-primary' : ''}"><polyline points="6 9 12 15 18 9"></polyline></svg>
-													</button>
-												</div>
-											</div>
-										</div>
-									{/if}
-
-									<!-- Inline Code Diff (Directly under the card in the VS Code grid) -->
-									{#if s.showDiff && s.diff}
-										<div class="cyber-diff-pane bg-black/90 text-white rounded-xl p-3 border border-base-content/10 mt-0.5 shadow-inner" transition:slide>
-											{#if editingDiffId === s.id}
-												<div class="flex justify-between items-center mb-2 pb-1.5 border-b border-white/5">
-													<span class="font-mono text-[8px] text-white/40">INLINE_EDITOR: ACTIVE</span>
-													<div class="flex gap-1.5">
-														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-success rounded-md px-2 font-mono" onclick={saveInlineEdit} disabled={loadingEditor || savingEditor}>
-															{savingEditor ? 'Saving' : 'Save'}
-														</button>
-														<button type="button" class="btn btn-[8px] h-5 min-h-5 btn-ghost text-white rounded-md px-2 font-mono" onclick={cancelInlineEdit} disabled={savingEditor}>
-															Cancel
-														</button>
-													</div>
-												</div>
-												{#if editingError}
-													<div class="mb-2 p-1.5 rounded bg-error/15 border border-error/20 text-[8px] text-error">
-														{editingError}
-													</div>
-												{/if}
-												{#if loadingEditor}
-													<span class="loading loading-spinner loading-xs"></span>
-												{:else}
-													<div class="max-h-60 overflow-y-auto custom-scrollbar font-mono text-[9px] leading-relaxed">
-														{#each editingRows as row, rowIndex (row.key)}
-															<div class="{row.kind === 'add' ? 'text-emerald-400 bg-emerald-950/20 border-l border-emerald-500' : row.kind === 'remove' ? 'text-rose-400 bg-rose-950/20 border-l border-rose-500' : 'opacity-60'} px-2">
-																{#if row.kind === 'hunk'}
-																	<div class="text-sky-400 font-bold opacity-80">{row.content}</div>
-																{:else if row.editable}
-																	<div class="grid grid-cols-[10px_1fr] gap-1 items-center">
-																		<span class="opacity-50">+</span>
-																		<input
-																			type="text"
-																			value={row.content}
-																			oninput={(e) => updateEditingRow(rowIndex, (e.currentTarget as HTMLInputElement).value)}
-																			class="w-full bg-transparent p-0 border-0 focus:outline-none text-white font-mono text-[9px]"
-																			spellcheck="false"
-																		/>
-																	</div>
-																{:else}
-																	<div>{row.kind === 'remove' ? `-${row.content}` : row.kind === 'context' ? ` ${row.content}` : row.content}</div>
-																{/if}
-															</div>
-														{/each}
-													</div>
-												{/if}
-											{:else}
-												<button
-													type="button"
-													class="w-full text-left font-mono text-[9px] max-h-60 overflow-y-auto custom-scrollbar leading-relaxed"
-													ondblclick={() => startInlineEdit(s)}
-													title={s.type === 'Deleted' ? 'Deleted files cannot be edited inline' : 'Double click to edit'}
-												>
-													{#each s.diff.split('\n') as line}
-														<div class="{line.startsWith('+') ? 'text-emerald-400 bg-emerald-950/10' : line.startsWith('-') ? 'text-rose-400 bg-rose-950/10' : 'opacity-40'} px-2">{line}</div>
-													{/each}
-												</button>
-											{/if}
-										</div>
-									{/if}
-								</div>
-							{/each}
-							{#if suggestions.length === 0}
-								<div class="flex-1 flex flex-col items-center justify-center opacity-25 py-12 gap-3 border border-dashed border-warning/10 rounded-xl">
-									<svg xmlns="http://www.w3.org/2000/svg" class="text-warning" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-									<span class="font-mono text-[8px] uppercase tracking-wider">All changes are staged</span>
-								</div>
-							{/if}
-						</div>
-					</div>
-
 				</div>
 
-				<!-- Recent Commit Messages (Bottom overlay inside Workspace) -->
-				{#if recentCommits.length > 0}
-					<div class="pt-4 border-t border-base-content/5">
-						<h4 class="text-[9px] font-mono font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-1.5 ml-1">
-							<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-							Recent Commits
-						</h4>
-						<div class="flex flex-wrap gap-2">
-							{#each recentCommits as commit}
+				<!-- Sidebar Body View Renderer -->
+				<div class="flex-1 flex flex-col overflow-y-auto vscode-scrollbar">
+					
+					<!-- VIEW: SOURCE CONTROL -->
+					{#if activeSidebar === 'source-control'}
+						<div class="p-3 flex flex-col gap-3 h-full">
+							
+							<!-- Commit Form Section styled as VS Code Message Input -->
+							<div class="flex flex-col gap-2 bg-base-100 p-3 rounded-xl border border-base-content/10 shadow-sm">
+								
+								<!-- Form Field: Title Summary -->
+								<div class="form-control">
+									<input
+										type="text"
+										bind:value={title}
+										placeholder="Summary (Required, e.g. feat: add login)"
+										class="input input-sm w-full bg-base-200/50 focus:bg-base-200 border-base-content/10 focus:border-primary focus:ring-1 focus:ring-primary rounded-lg text-xs"
+										required
+										onkeydown={handleCommitKeyDown}
+									/>
+								</div>
+
+								<!-- Form Field: Message / Bullet Points -->
+								<div class="form-control">
+									<textarea
+										bind:value={notes}
+										placeholder="Description (Ctrl+Enter to commit & save log)"
+										class="textarea textarea-sm w-full bg-base-200/50 focus:bg-base-200 border-base-content/10 focus:border-primary focus:ring-1 focus:ring-primary rounded-lg text-[11px] leading-relaxed min-h-[90px] font-mono"
+										onkeydown={handleCommitKeyDown}
+									></textarea>
+								</div>
+
+								<!-- Toggle: Git Auto commit -->
+								<div class="flex items-center justify-between pt-1 border-t border-base-content/5 mt-1">
+									<div class="flex flex-col text-left">
+										<span class="text-[9px] uppercase font-black tracking-wider text-primary">Stage & Commit Git</span>
+										<span class="text-[8px] opacity-40">Auto-commit with daily task log</span>
+									</div>
+									<input 
+										type="checkbox" 
+										class="toggle toggle-primary toggle-xs" 
+										bind:checked={includeGitCommit} 
+										disabled={!projectPath} 
+									/>
+								</div>
+
+								<!-- Big Blue Commit Button -->
 								<button
-									type="button"
-									class="p-2 px-3 rounded-xl bg-base-200/55 hover:bg-base-200 hover:border-primary border border-dashed border-base-content/10 transition-all text-left text-[9px] opacity-75 hover:opacity-100 font-mono italic shrink-0"
-									onclick={() => useCommitMessage(commit)}
+									onclick={() => handleSubmit()}
+									class="btn btn-sm btn-primary w-full rounded-lg font-bold text-xs gap-1.5 mt-1 shadow-md hover:shadow-primary/20 {isCommitting ? 'loading' : ''}"
+									disabled={isCommitting || !title.trim()}
 								>
-									"{commit}"
+									{#if !isCommitting}
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+									{/if}
+									Commit & Log Task
 								</button>
-							{/each}
+							</div>
+
+							<!-- Collapsible Section: STAGED CHANGES -->
+							<div class="flex flex-col mt-2">
+								<div class="flex items-center justify-between px-1 py-1.5 text-[10px] font-bold tracking-wider opacity-60 uppercase border-b border-base-content/5 mb-1 select-none">
+									<div class="flex items-center gap-1">
+										<span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+										<span>Staged Changes</span>
+									</div>
+									<div class="flex items-center gap-2">
+										{#if stagedChanges.length > 0}
+											<button onclick={() => moveAll(false)} class="hover:text-primary transition-colors text-[9px]">Unstage All</button>
+										{/if}
+										<span class="badge badge-sm font-mono text-[9px] bg-base-content/10 font-bold">{stagedChanges.length}</span>
+									</div>
+								</div>
+
+								<!-- Drag & Drop Staged Zone -->
+								<div 
+									bind:this={stagedZoneEl}
+									class="flex flex-col gap-1 rounded-lg min-h-[50px] p-1 transition-all duration-300 {stagedZoneClass}"
+								>
+									{#each stagedChanges as s, i (s.id)}
+										{#if dragState?.file === s.file && dragState?.fromStaged === true && dragHasMoved}
+											<div class="h-9 rounded-lg border border-dashed border-primary/20 bg-primary/2"></div>
+										{:else}
+											<div 
+												role="button"
+												tabindex="0"
+												class="flex items-center justify-between p-2 rounded-lg text-left select-none cursor-grab active:cursor-grabbing text-[11px] group transition-all border border-transparent {activeTabId === `diff-${s.file}-staged` ? 'bg-primary/10 text-primary border-primary/10' : 'hover:bg-base-content/5'}"
+												onpointerdown={(e) => onCardPointerDown(e, s.file, true)}
+												onclick={() => openFileDiffTab(s, true)}
+												onkeydown={(e) => e.key === 'Enter' && openFileDiffTab(s, true)}
+											>
+												<div class="flex items-center gap-2 overflow-hidden flex-1">
+													<!-- Selection check box -->
+													<input 
+														type="checkbox" 
+														checked={s.selected} 
+														class="checkbox checkbox-xs checkbox-primary shrink-0 scale-90" 
+														onclick={(e) => e.stopPropagation()} 
+														onchange={() => toggleSelection(i, true)}
+														aria-label="Toggle selection"
+													/>
+													<span class="font-mono text-xs truncate">{s.file.split(/[/\\]/).pop()}</span>
+													<span class="text-[9px] opacity-40 font-mono truncate max-w-[80px]">{s.file.slice(0, Math.max(s.file.lastIndexOf('/'), s.file.lastIndexOf('\\')) || 10)}</span>
+												</div>
+
+												<div class="flex items-center gap-2 shrink-0">
+													<span class="text-success font-bold text-[10px] font-mono">M</span>
+													<div class="hidden group-hover:flex items-center gap-1 transition-all">
+														<button onclick={(e) => moveFile(e, s.file, false)} class="btn btn-xs btn-ghost btn-square text-error" title="Unstage File">
+															<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+														</button>
+													</div>
+												</div>
+											</div>
+										{/if}
+									{/each}
+									{#if stagedChanges.length === 0}
+										<div class="py-4 text-center text-[10px] opacity-35 font-medium border border-dashed border-base-content/10 rounded-lg">
+											No staged modifications
+										</div>
+									{/if}
+								</div>
+							</div>
+
+							<!-- Collapsible Section: DETECTED CHANGES (CHANGES) -->
+							<div class="flex flex-col mt-3">
+								<div class="flex items-center justify-between px-1 py-1.5 text-[10px] font-bold tracking-wider opacity-60 uppercase border-b border-b-base-content/5 mb-1 select-none">
+									<div class="flex items-center gap-1">
+										<span class="w-1.5 h-1.5 rounded-full bg-warning"></span>
+										<span>Changes</span>
+									</div>
+									<div class="flex items-center gap-2">
+										{#if suggestions.length > 0}
+											<button onclick={() => moveAll(true)} class="hover:text-primary transition-colors text-[9px]">Stage All</button>
+										{/if}
+										<span class="badge badge-sm font-mono text-[9px] bg-base-content/10 font-bold">{suggestions.length}</span>
+									</div>
+								</div>
+
+								<!-- Drag & Drop Detected Zone -->
+								<div 
+									bind:this={unstagedZoneEl}
+									class="flex flex-col gap-1 rounded-lg min-h-[50px] p-1 transition-all duration-300 {unstagedZoneClass}"
+								>
+									{#each suggestions as s, i (s.id)}
+										{#if dragState?.file === s.file && dragState?.fromStaged === false && dragHasMoved}
+											<div class="h-9 rounded-lg border border-dashed border-primary/20 bg-primary/2"></div>
+										{:else}
+											<div 
+												role="button"
+												tabindex="0"
+												class="flex items-center justify-between p-2 rounded-lg text-left select-none cursor-grab active:cursor-grabbing text-[11px] group transition-all border border-transparent {activeTabId === `diff-${s.file}-unstaged` ? 'bg-primary/10 text-primary border-primary/10' : 'hover:bg-base-content/5'}"
+												onpointerdown={(e) => onCardPointerDown(e, s.file, false)}
+												onclick={() => openFileDiffTab(s, false)}
+												onkeydown={(e) => e.key === 'Enter' && openFileDiffTab(s, false)}
+											>
+												<div class="flex items-center gap-2 overflow-hidden flex-1">
+													<!-- Selection checkbox -->
+													<input 
+														type="checkbox" 
+														checked={s.selected} 
+														class="checkbox checkbox-xs checkbox-primary shrink-0 scale-90" 
+														onclick={(e) => e.stopPropagation()} 
+														onchange={() => toggleSelection(i, false)}
+														aria-label="Toggle selection"
+													/>
+													<span class="font-mono text-xs truncate">{s.file.split(/[/\\]/).pop()}</span>
+													<span class="text-[9px] opacity-40 font-mono truncate max-w-[80px]">{s.file}</span>
+												</div>
+
+												<div class="flex items-center gap-2 shrink-0">
+													<span class="text-warning font-bold text-[10px] font-mono">{s.status === '?' ? 'U' : 'M'}</span>
+													<div class="hidden group-hover:flex items-center gap-1 transition-all">
+														<button onclick={(e) => moveFile(e, s.file, true)} class="btn btn-xs btn-ghost btn-square text-success" title="Stage File">
+															<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+														</button>
+														<button onclick={(e) => { e.stopPropagation(); discardChanges(s.file); }} class="btn btn-xs btn-ghost btn-square text-error" title="Revert Changes">
+															<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+														</button>
+													</div>
+												</div>
+											</div>
+										{/if}
+									{/each}
+									{#if suggestions.length === 0}
+										<div class="py-4 text-center text-[10px] opacity-35 font-medium border border-dashed border-base-content/10 rounded-lg">
+											All modifications staged
+										</div>
+									{/if}
+								</div>
+							</div>
+
 						</div>
+
+					<!-- VIEW: DUTY LOGS HISTORY -->
+					{:else}
+						{#if activeSidebar === 'history'}
+							<div class="p-3 flex flex-col gap-3 h-full">
+								
+								<!-- Search History bar -->
+								<div class="form-control shrink-0">
+									<input 
+										type="text" 
+										bind:value={sidebarSearchQuery} 
+										placeholder="Search audit trail logs..." 
+										class="input input-sm w-full bg-base-100 border-base-content/10 focus:border-primary focus:ring-1 focus:ring-primary rounded-lg text-[11px] leading-none h-8"
+									/>
+								</div>
+
+								<!-- List of logged history -->
+								<div class="flex-1 flex flex-col gap-1.5 overflow-y-auto vscode-scrollbar">
+									{#each filteredLoggedDuties as task (task.id)}
+										<div 
+											role="button"
+											tabindex="0"
+											onclick={() => openLogTab(task)}
+											onkeydown={(e) => e.key === 'Enter' && openLogTab(task)}
+											class="p-2.5 rounded-xl text-left hover:bg-base-content/5 border border-transparent hover:border-base-content/5 cursor-pointer flex flex-col gap-1 transition-all group"
+										>
+											<div class="flex items-center justify-between">
+												<span class="badge badge-xs text-[7px] font-bold font-mono border bg-secondary/15 border-secondary/30 text-secondary tracking-wide rounded px-1.5 uppercase truncate max-w-[120px]">
+													{task.title}
+												</span>
+												<span class="text-[9px] opacity-35 font-mono">
+													{new Date(task.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+												</span>
+											</div>
+											<p class="text-xs font-bold leading-snug text-base-content/90 truncate group-hover:text-primary transition-colors">
+												{task.description || 'No Description'}
+											</p>
+											{#if task.notes}
+												<p class="text-[10px] opacity-50 font-mono truncate max-w-full">
+													{task.notes.replace(/[\n\r]+/g, ' ')}
+												</p>
+											{/if}
+										</div>
+									{:else}
+										<div class="py-12 text-center text-xs opacity-40 italic">
+											No logs found matching search.
+										</div>
+									{/each}
+								</div>
+							</div>
+
+						<!-- VIEW: WORKSPACE EXPLORER -->
+						{:else}
+							{#if activeSidebar === 'explorer'}
+								<div class="p-4 flex flex-col gap-4">
+									<div class="flex flex-col gap-1 bg-base-100 p-3.5 rounded-xl border border-base-content/10 shadow-inner">
+										<span class="text-[9px] uppercase font-black tracking-widest opacity-45">WORKSPACE ROOT</span>
+										<span class="font-mono text-[10px] break-all truncate text-primary font-bold opacity-90">{projectPath || 'No Folder Selected'}</span>
+									</div>
+
+									<button
+										onclick={() => openExplorer(projectPath)}
+										class="btn btn-sm btn-primary rounded-lg font-bold text-xs gap-1.5 w-full uppercase tracking-wider"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+										Pick Folder
+									</button>
+
+									{#if recentCommits.length > 0}
+										<div class="flex flex-col mt-4">
+											<h4 class="text-[10px] font-bold uppercase opacity-55 tracking-widest mb-2 pb-1 border-b border-base-content/5">Recent Branch Logs</h4>
+											<div class="flex flex-col gap-1">
+												{#each recentCommits as commit}
+													<button
+														onclick={() => useCommitMessage(commit)}
+														class="text-left p-2 rounded-lg bg-base-100 hover:bg-base-300 border border-base-content/10 transition-all font-mono text-[10px] opacity-80 truncate"
+														title="Double-click to set as message input"
+													>
+														{commit}
+													</button>
+												{/each}
+											</div>
+										</div>
+									{/if}
+								</div>
+
+							<!-- VIEW: PREFERENCES / THEMES -->
+							{:else}
+								{#if activeSidebar === 'settings'}
+									<div class="p-4 flex flex-col gap-4">
+										
+										<!-- Color Theme selector -->
+										<div class="form-control w-full">
+											<label class="label pt-0 pb-1" for="sidebar-theme-select">
+												<span class="label-text text-[10px] uppercase font-black opacity-55 tracking-widest">Active UI Color Theme</span>
+											</label>
+											<select 
+												id="sidebar-theme-select"
+												class="select select-sm select-bordered w-full rounded-lg font-bold text-xs bg-base-100"
+												value={$theme}
+												onchange={(e) => theme.set((e.currentTarget as HTMLSelectElement).value)}
+											>
+												{#each themes as t}
+													<option value={t} selected={$theme === t} class="capitalize font-bold">{t}</option>
+												{/each}
+											</select>
+										</div>
+
+										<div class="divider opacity-50 my-2"></div>
+
+										<!-- Advanced Modal trigger -->
+										<button 
+											onclick={() => showSettingsModal = true}
+											class="btn btn-sm btn-outline rounded-lg text-xs gap-1.5 w-full uppercase"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+											System Settings Console
+										</button>
+
+										<!-- Error panel visual inside settings if exist -->
+										{#if errorMessage}
+											<div class="p-3 rounded-lg bg-error/15 border border-error/25 text-error text-[10px] leading-relaxed font-mono mt-4">
+												<strong>LOG_ERROR:</strong> {errorMessage}
+											</div>
+										{/if}
+									</div>
+								{/if}
+							{/if}
+						{/if}
+					{/if}
+
+				</div>
+			</section>
+		{/if}
+
+		<!-- 2.3 Main Editor Area (Fills remaining space, Tab based) -->
+		<main class="flex-1 flex flex-col h-full overflow-hidden bg-base-100 relative">
+			
+			<!-- Editor Tabs Navigation Bar -->
+			<div class="h-10 bg-base-300 border-b border-base-content/10 flex items-center justify-between px-2 overflow-x-auto select-none shrink-0 vscode-scrollbar">
+				<div class="flex items-center h-full">
+					
+					<!-- Expand Sidebar trigger inside tabs bar if collapsed -->
+					{#if isSidebarCollapsed}
+						<button 
+							onclick={() => isSidebarCollapsed = false}
+							class="btn btn-xs btn-ghost btn-square mr-2 hover:bg-base-content/10 text-base-content/70"
+							title="Expand Sidebar Panel"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+						</button>
+					{/if}
+
+					<!-- Tab elements list -->
+					{#each openTabs as tab (tab.id)}
+						<div 
+							role="button"
+							tabindex="0"
+							onclick={() => activeTabId = tab.id}
+							onkeydown={(e) => e.key === 'Enter' && (activeTabId = tab.id)}
+							class="h-[40px] px-4 text-[12px] font-medium flex items-center gap-2 border-r border-base-content/10 transition-colors relative cursor-pointer group
+								{activeTabId === tab.id ? 'bg-base-100 text-primary border-t-2 border-t-primary font-bold shadow-sm' : 'bg-base-200/55 text-base-content/55 hover:bg-base-200'}"
+						>
+							<!-- Icon depending on tab type -->
+							{#if tab.type === 'welcome'}
+								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-60"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+							{:else}
+								{#if tab.type === 'diff'}
+									<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-secondary shrink-0"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+								{:else}
+									<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-success shrink-0"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+								{/if}
+							{/if}
+
+							<span class="truncate max-w-[120px]">{tab.title}</span>
+
+							<!-- Tab Close Button -->
+							<button 
+								onclick={(e) => closeTab(e, tab.id)}
+								class="opacity-0 group-hover:opacity-100 hover:bg-base-content/15 p-0.5 rounded cursor-pointer transition-opacity text-base-content/60 scale-90"
+								title="Close tab"
+							>
+								✕
+							</button>
+						</div>
+					{/each}
+				</div>
+
+				<!-- Visual icons on top right of Editor tab bar -->
+				<div class="flex items-center gap-1 opacity-70">
+					{#if activeTabId.startsWith('diff-')}
+						<!-- Toggle Inline/Split view button directly in diff editors -->
+						<div class="flex items-center bg-base-content/5 rounded-lg px-2 py-0.5 mr-2">
+							<span class="text-[10px] font-bold mr-2 uppercase opacity-60">Layout</span>
+							<button 
+								onclick={() => diffViewType = 'split'} 
+								class="btn btn-xs font-bold rounded-md px-1.5 h-5 min-h-5 {diffViewType === 'split' ? 'btn-primary' : 'btn-ghost'}"
+							>
+								Split
+							</button>
+							<button 
+								onclick={() => diffViewType = 'inline'} 
+								class="btn btn-xs font-bold rounded-md px-1.5 h-5 min-h-5 {diffViewType === 'inline' ? 'btn-primary' : 'btn-ghost'}"
+							>
+								Inline
+							</button>
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Active Editor Body Viewports -->
+			<div class="flex-1 flex flex-col overflow-hidden relative w-full h-full">
+				
+				<!-- TAB VIEW: WELCOME DASHBOARD -->
+				{#if activeTabId === 'welcome'}
+					<div class="flex-1 flex flex-col md:grid md:grid-cols-12 gap-6 p-6 overflow-y-auto vscode-scrollbar h-full bg-base-100">
+						
+						<!-- Header splash -->
+						<div class="col-span-12 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-base-content/10">
+							<div class="flex items-center gap-4">
+								<div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-primary-content shadow-xl shadow-primary/10">
+									<svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+								</div>
+								<div class="text-left">
+									<h1 class="text-3xl font-black uppercase tracking-tighter bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
+										ohmycode
+									</h1>
+									<p class="text-xs uppercase font-mono tracking-widest opacity-45 font-black mt-1">Audit Trail Developer Workspace // Active</p>
+								</div>
+							</div>
+
+							<!-- Picker & Watcher status triggers in welcome screen -->
+							<div class="flex flex-wrap items-center gap-2">
+								{#if projectPath}
+									<span class="font-mono text-[10px] bg-base-200 py-2 px-3 border border-base-content/15 rounded-xl font-medium opacity-80 shadow-inner">
+										{projectPath}
+									</span>
+								{/if}
+								<button onclick={() => openExplorer(projectPath)} class="btn btn-sm btn-primary rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all">
+									Pick Workspace Folder
+								</button>
+							</div>
+						</div>
+
+						<!-- Left deck: start and quick links (Col 4) -->
+						<div class="col-span-12 lg:col-span-4 flex flex-col gap-6">
+							
+							<div class="card bg-base-200/50 p-5 rounded-2xl border border-base-content/5 text-left flex flex-col gap-4 shadow-sm">
+								<h3 class="text-xs font-black uppercase tracking-wider opacity-60 border-b border-base-content/5 pb-2">Start Log Actions</h3>
+								<div class="flex flex-col gap-2">
+									<button onclick={() => { activeSidebar = 'source-control'; isSidebarCollapsed = false; }} class="btn btn-sm btn-outline rounded-xl font-bold text-xs justify-start gap-2 border-base-content/10 hover:bg-primary/10 hover:text-primary hover:border-primary/20 bg-base-100">
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+										Record New Activity Duty
+									</button>
+									<button onclick={() => { activeSidebar = 'history'; isSidebarCollapsed = false; }} class="btn btn-sm btn-outline rounded-xl font-bold text-xs justify-start gap-2 border-base-content/10 hover:bg-secondary/10 hover:text-secondary hover:border-secondary/20 bg-base-100">
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+										Search Log History
+									</button>
+								</div>
+							</div>
+
+							<!-- Productivity HUD widgets -->
+							<div class="card bg-base-200/50 p-5 rounded-2xl border border-base-content/5 text-left flex flex-col gap-4 shadow-sm">
+								<h3 class="text-xs font-black uppercase tracking-wider opacity-60 border-b border-base-content/5 pb-2">Productivity Console</h3>
+								
+								<div class="grid grid-cols-2 gap-3">
+									<div class="bg-base-100 p-3 rounded-xl border border-base-content/10 flex flex-col items-start shadow-sm">
+										<span class="text-[10px] font-bold uppercase opacity-40">Duties Logged</span>
+										<span class="text-2xl font-black text-primary mt-1">{productivityStats.totalLogged}</span>
+									</div>
+									<div class="bg-base-100 p-3 rounded-xl border border-base-content/10 flex flex-col items-start shadow-sm">
+										<span class="text-[10px] font-bold uppercase opacity-40">Backups Stored</span>
+										<span class="text-2xl font-black text-secondary mt-1">{productivityStats.filesCount}</span>
+									</div>
+									<div class="bg-base-100 p-3 rounded-xl border border-base-content/10 flex flex-col items-start col-span-2 shadow-sm">
+										<span class="text-[10px] font-bold uppercase opacity-40">Git Accumulations</span>
+										<span class="text-xs font-mono font-bold text-base-content/80 mt-1 flex items-center gap-2">
+											<span class="text-success font-black">+{productivityStats.additions} insertions</span>
+											<span class="opacity-40">|</span>
+											<span class="text-error font-black">-{productivityStats.deletions} deletions</span>
+										</span>
+									</div>
+								</div>
+							</div>
+
+							<!-- Helpful VS Code system tips -->
+							<div class="card bg-base-200/50 p-5 rounded-2xl border border-base-content/5 text-left flex flex-col gap-3 shadow-sm">
+								<h3 class="text-xs font-black uppercase tracking-wider opacity-60 border-b border-base-content/5 pb-2">Workspace Shortcuts</h3>
+								<div class="flex flex-col gap-2 font-mono text-[10px] leading-relaxed opacity-75">
+									<div class="flex items-center justify-between"><span class="font-bold">Stage file:</span> <kbd class="kbd kbd-xs bg-base-100 border-base-content/10 font-bold">Drag and drop</kbd></div>
+									<div class="flex items-center justify-between"><span class="font-bold">Save commit:</span> <kbd class="kbd kbd-xs bg-base-100 border-base-content/10 font-bold">Ctrl + Enter</kbd></div>
+									<div class="flex items-center justify-between"><span class="font-bold">Modify file code:</span> <kbd class="kbd kbd-xs bg-base-100 border-base-content/10 font-bold">Double-click addition</kbd></div>
+									<div class="flex items-center justify-between"><span class="font-bold">View raw backup:</span> <kbd class="kbd kbd-xs bg-base-100 border-base-content/10 font-bold">Click file badge</kbd></div>
+								</div>
+							</div>
+
+						</div>
+
+						<!-- Right deck: recent duty cards list (Col 8) -->
+						<div class="col-span-12 lg:col-span-8 flex flex-col gap-4 text-left">
+							<div class="flex items-center justify-between pb-2 border-b border-base-content/10">
+								<h3 class="text-xs font-black uppercase tracking-wider opacity-60">Recent Audited Log History ({kanbanStore.tasks.length} items)</h3>
+							</div>
+
+							<div class="flex-1 overflow-y-auto max-h-[60vh] vscode-scrollbar pr-1 flex flex-col gap-1">
+								{#each kanbanStore.tasks as task (task.id)}
+									<!-- Reusing the exact card layout inside the Welcome Screen dashboard -->
+									<KanbanCard {task} />
+								{:else}
+									<div class="py-20 text-center opacity-30 border-2 border-dashed border-base-content/15 rounded-3xl mt-2 flex flex-col items-center justify-center gap-3 bg-base-200/10">
+										<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+										<div>
+											<p class="text-sm font-bold">No logs or duties filed today.</p>
+											<p class="text-xs mt-1">Staged file modifications on the left sidebar to generate reports.</p>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+
 					</div>
+
+				<!-- TAB VIEW: INTERACTIVE DIFF EDITOR -->
+				{:else}
+					{#if activeTabId.startsWith('diff-')}
+						{@const tab = openTabs.find(t => t.id === activeTabId)}
+						{#if tab && tab.file}
+							{@const item = tab.file}
+							<div class="flex-1 flex flex-col overflow-hidden h-full bg-base-100 text-base-content select-text">
+								
+								<!-- Sub toolbar for diff actions -->
+								<div class="h-9 px-4 bg-base-200 border-b border-base-content/10 flex items-center justify-between text-xs shrink-0 select-none">
+									<div class="flex items-center gap-2.5">
+										<span class="badge badge-sm font-bold bg-primary/10 border-primary/20 text-primary font-mono">{item.type}</span>
+										<span class="font-mono text-[11px] font-semibold text-base-content/80 truncate max-w-sm">{item.file}</span>
+									</div>
+
+									<div class="flex items-center gap-2">
+										{#if editingFile === item.file}
+											<!-- Inline Editor Controls -->
+											<button onclick={saveInlineEdit} class="btn btn-xs btn-success font-bold text-[10px] h-6 px-2.5 rounded-md" disabled={savingEditor}>
+												{savingEditor ? 'Saving...' : 'Save File'}
+											</button>
+											<button onclick={cancelInlineEdit} class="btn btn-xs btn-ghost text-base-content font-bold text-[10px] h-6 px-2.5 rounded-md border border-base-content/10" disabled={savingEditor}>
+												Cancel
+											</button>
+										{:else}
+											{#if item.type !== 'Deleted'}
+												<span class="text-[10px] opacity-40 font-semibold font-mono italic mr-2 select-none">Double click green line to edit inline</span>
+											{/if}
+										{/if}
+										
+										<span class="text-base-content/25">|</span>
+
+										<button onclick={(e) => moveFile(e, item.file, !tab.isStaged)} class="btn btn-xs btn-outline border-base-content/15 rounded-md h-6 font-bold text-[10px] uppercase tracking-wider px-2 hover:bg-primary hover:text-primary-content hover:border-primary">
+											{tab.isStaged ? 'Unstage file' : 'Stage file'}
+										</button>
+										{#if !tab.isStaged}
+											<button onclick={() => discardChanges(item.file)} class="btn btn-xs btn-error btn-outline rounded-md h-6 font-bold text-[10px] uppercase tracking-wider px-2">
+												Discard
+											</button>
+										{/if}
+									</div>
+								</div>
+
+								{#if editingError}
+									<div class="alert alert-error rounded-none py-2 px-4 text-xs shrink-0">
+										<strong>Editor Error:</strong> {editingError}
+									</div>
+								{/if}
+
+								<!-- Diff editor frame -->
+								<div class="flex-1 overflow-y-auto vscode-scrollbar bg-black/95 text-[#f8f8f2] relative h-full">
+									
+									{#if loadingEditor}
+										<div class="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+											<span class="loading loading-spinner loading-md text-primary"></span>
+										</div>
+									{/if}
+
+									<!-- RENDER: SPLIT DIFF VIEW -->
+									{#if diffViewType === 'split'}
+										<div class="flex flex-col min-h-full font-mono text-[11px] leading-relaxed select-text p-2">
+											{#each editingRows as row, rIdx (row.key)}
+												<div class="grid grid-cols-2 border-b border-white/5 min-h-[19px] hover:bg-white/5 transition-colors align-middle">
+													
+													<!-- LEFT pane (Removed/Context) -->
+													{#if row.kind === 'hunk'}
+														<div class="col-span-2 bg-[#21252b] text-[#5c6370] py-0.5 px-3 font-semibold select-none">
+															{row.content}
+														</div>
+													{:else}
+														{#if row.kind === 'remove'}
+															<div class="bg-[#3a1d1d] text-[#ff8080] border-r border-white/10 px-2 flex items-center h-full">
+																<span class="w-9 opacity-30 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.oldNumber}</span>
+																<span class="opacity-40 pr-2 shrink-0 select-none">-</span>
+																<span class="whitespace-pre truncate w-full">{row.content}</span>
+															</div>
+															<div class="bg-[#1e1e1e] border-r border-white/10 opacity-30 select-none" style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"></div>
+														{:else}
+															{#if row.kind === 'add'}
+																<div class="bg-[#1e1e1e] border-r border-white/10 opacity-30 select-none" style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"></div>
+																<div class="bg-[#1b2f1c] text-[#80ff80] px-2 flex items-center h-full">
+																	<span class="w-9 opacity-30 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.newNumber}</span>
+																	<span class="opacity-40 pr-2 shrink-0 select-none">+</span>
+																	
+																	{#if row.editable && editingDiffId === item.id}
+																		<input
+																			type="text"
+																			value={row.content}
+																			oninput={(e) => updateEditingRow(rIdx, (e.currentTarget as HTMLInputElement).value)}
+																			class="w-full bg-transparent p-0 border-0 focus:outline-none text-[#a6e22e] font-mono text-[11px] h-full"
+																			spellcheck="false"
+																		/>
+																	{:else}
+																		<span class="whitespace-pre truncate w-full" ondblclick={() => startInlineEdit(item)} title="Double click to edit">{row.content}</span>
+																	{/if}
+																</div>
+															{:else}
+																<!-- Context -->
+																<div class="bg-transparent opacity-65 border-r border-white/10 px-2 flex items-center h-full">
+																	<span class="w-9 opacity-20 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.oldNumber}</span>
+																	<span class="w-3 shrink-0 select-none"></span>
+																	<span class="whitespace-pre truncate w-full">{row.content}</span>
+																</div>
+																<div class="bg-transparent opacity-65 border-r border-white/10 px-2 flex items-center h-full">
+																	<span class="w-9 opacity-20 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.newNumber}</span>
+																	<span class="w-3 shrink-0 select-none"></span>
+																	<span class="whitespace-pre truncate w-full">{row.content}</span>
+																</div>
+															{/if}
+														{/if}
+													{/if}
+
+												</div>
+											{:else}
+												<!-- Fallback to raw diff displays if rows not loaded yet -->
+												<div class="p-4 whitespace-pre font-mono text-xs opacity-60">
+													{item.diff || 'No content changes detected'}
+												</div>
+											{/each}
+										</div>
+
+									<!-- RENDER: INLINE DIFF VIEW -->
+									{:else}
+										<div class="flex flex-col min-h-full font-mono text-[11px] leading-relaxed select-text p-2">
+											{#each editingRows as row, rIdx (row.key)}
+												<div class="flex border-b border-white/5 min-h-[19px] hover:bg-white/5 transition-colors align-middle px-2">
+													
+													{#if row.kind === 'hunk'}
+														<div class="w-full bg-[#21252b] text-[#5c6370] py-0.5 px-3 font-semibold select-none">
+															{row.content}
+														</div>
+													{:else}
+														{#if row.kind === 'remove'}
+															<div class="bg-[#3a1d1d] text-[#ff8080] w-full flex items-center py-0.5">
+																<span class="w-9 opacity-30 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.oldNumber}</span>
+																<span class="w-9 shrink-0"></span>
+																<span class="opacity-40 pr-2 shrink-0 select-none">-</span>
+																<span class="whitespace-pre truncate">{row.content}</span>
+															</div>
+														{:else}
+															{#if row.kind === 'add'}
+																<div class="bg-[#1b2f1c] text-[#80ff80] w-full flex items-center py-0.5">
+																	<span class="w-9 shrink-0"></span>
+																	<span class="w-9 opacity-30 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.newNumber}</span>
+																	<span class="opacity-40 pr-2 shrink-0 select-none">+</span>
+																	
+																	{#if row.editable && editingDiffId === item.id}
+																		<input
+																			type="text"
+																			value={row.content}
+																			oninput={(e) => updateEditingRow(rIdx, (e.currentTarget as HTMLInputElement).value)}
+																			class="w-full bg-transparent p-0 border-0 focus:outline-none text-[#a6e22e] font-mono text-[11px] h-full"
+																			spellcheck="false"
+																		/>
+																	{:else}
+																		<span class="whitespace-pre truncate" ondblclick={() => startInlineEdit(item)} title="Double click to edit">{row.content}</span>
+																	{/if}
+																</div>
+															{:else}
+																<!-- Context -->
+																<div class="bg-transparent opacity-65 w-full flex items-center py-0.5">
+																	<span class="w-9 opacity-20 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.oldNumber}</span>
+																	<span class="w-9 opacity-20 text-right pr-2 shrink-0 select-none font-mono text-[9px]">{row.newNumber}</span>
+																	<span class="w-3 shrink-0"></span>
+																	<span class="whitespace-pre truncate">{row.content}</span>
+																</div>
+															{/if}
+														{/if}
+													{/if}
+
+												</div>
+											{:else}
+												<!-- Fallback raw display -->
+												<div class="p-4 whitespace-pre font-mono text-xs opacity-60">
+													{item.diff}
+												</div>
+											{/each}
+										</div>
+									{/if}
+
+								</div>
+							</div>
+						{/if}
+					{:else}
+						
+						<!-- TAB VIEW: SPECIFIC LOG DETAIL AUDIT -->
+						{#if activeTabId.startsWith('log-')}
+							{@const tab = openTabs.find(t => t.id === activeTabId)}
+							{#if tab && tab.task}
+								{@const task = tab.task}
+								<div class="flex-1 flex flex-col p-6 overflow-y-auto vscode-scrollbar text-left h-full bg-base-100 select-text">
+									
+									<div class="flex justify-between items-start pb-4 border-b border-base-content/10 mb-6">
+										<div>
+											<span class="badge badge-lg bg-success/15 border-success/30 text-success font-bold font-mono tracking-wider py-3 px-4 rounded-xl uppercase mb-2">
+												Log Entry Audited
+											</span>
+											<h2 class="text-2xl font-black tracking-tight">{task.description || task.title}</h2>
+											<span class="text-xs opacity-45 font-mono">FILED TIMESTAMP: {new Date(task.createdAt).toLocaleString()}</span>
+										</div>
+										
+										<button 
+											onclick={() => { 
+												if (confirm('Are you sure you want to delete this duty from the history archive?')) {
+													kanbanStore.removeTask(task.id);
+													closeTab(new MouseEvent('click'), tab.id);
+												}
+											}}
+											class="btn btn-sm btn-error btn-outline rounded-xl uppercase text-xs font-bold font-mono"
+										>
+											Delete Log Entry
+										</button>
+									</div>
+
+									<div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+										
+										<!-- Details left -->
+										<div class="md:col-span-8 flex flex-col gap-6">
+											
+											<!-- Commit message notes -->
+											{#if task.notes}
+												<div class="bg-base-200/50 p-5 rounded-2xl border border-base-content/5">
+													<h4 class="text-[10px] font-mono font-black uppercase tracking-widest opacity-45 mb-3">COMMIT AUDIT DATA</h4>
+													<p class="whitespace-pre-wrap font-mono text-xs leading-relaxed opacity-85 select-text">{task.notes}</p>
+												</div>
+											{/if}
+
+											<!-- backup download files listing -->
+											{#if task.files && task.files.length > 0}
+												<div class="flex flex-col gap-3">
+													<h4 class="text-[10px] font-mono font-black uppercase tracking-widest opacity-45">BACKED-UP MODIFICATIONS</h4>
+													<div class="flex flex-col gap-2">
+														{#each task.files as file}
+															<div class="flex items-center justify-between p-3.5 bg-base-200/40 hover:bg-base-200/60 transition-all border border-base-content/10 rounded-xl">
+																<div class="flex flex-col">
+																	<span class="font-mono text-xs font-semibold">{file.split(/[/\\]/).pop()}</span>
+																	<span class="font-mono text-[9px] opacity-45 mt-0.5">{file}</span>
+																</div>
+
+																<!-- Download backups trigger -->
+																<button 
+																	onclick={() => {
+																		if (!task.projectPath) return;
+																		const params = new URLSearchParams({
+																			projectPath: task.projectPath,
+																			file,
+																			...(task.logFolderName ? { logFolder: task.logFolderName } : { createdAt: String(task.createdAt) })
+																		});
+																		window.open(`/api/log/download?${params}`, '_blank');
+																	}}
+																	class="btn btn-xs btn-outline rounded-md font-bold text-[10px] uppercase tracking-wider"
+																>
+																	Download Backup
+																</button>
+															</div>
+														{/each}
+													</div>
+												</div>
+											{/if}
+
+										</div>
+
+										<!-- Details right -->
+										<div class="md:col-span-4 flex flex-col gap-6">
+											
+											<!-- Directory specs -->
+											<div class="bg-base-200/30 p-4 rounded-xl border border-base-content/5 flex flex-col gap-2 font-mono text-[10px]">
+												<span class="font-bold opacity-45 uppercase">WORKSPACE STATS</span>
+												<div><span class="opacity-55">Path:</span> <span class="font-bold truncate select-text">{task.projectPath || 'None'}</span></div>
+												<div><span class="opacity-55">Type Tag:</span> <span class="font-bold select-text">{task.title}</span></div>
+												{#if task.logFolderName}
+													<div><span class="opacity-55">ID folder:</span> <span class="font-bold select-text">{task.logFolderName}</span></div>
+												{/if}
+											</div>
+
+											<!-- Modified functions list -->
+											{#if task.functions && task.functions.length > 0}
+												<div class="flex flex-col gap-2">
+													<h4 class="text-[10px] font-mono font-black uppercase tracking-widest opacity-45">AFFECTED CODE SYMBOLS</h4>
+													<div class="flex flex-wrap gap-1.5">
+														{#each task.functions as func}
+															<span class="badge badge-sm border font-mono font-bold text-[10px] tracking-wide rounded-lg py-2 px-2.5 bg-secondary/10 border-secondary/25 text-secondary">{func}()</span>
+														{/each}
+													</div>
+												</div>
+											{/if}
+
+										</div>
+
+									</div>
+
+								</div>
+							{/if}
+						{/if}
+
+					{/if}
 				{/if}
 
-			{:else}
-				<!-- Empty Workspace Welcome Deck (Extremely Premium Futuristic Welcome Panel) -->
-				<div class="flex-1 flex flex-col items-center justify-center p-8 bg-base-200/20 border border-base-content/5 rounded-3xl relative overflow-hidden" transition:fade>
-					<div class="absolute inset-0 opacity-[0.02]" style="background-size: 20px 20px; background-image: radial-gradient(circle, currentColor 1px, transparent 1px);"></div>
-					<div class="text-center relative z-10 max-w-sm flex flex-col items-center">
-						<div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center border border-base-content/10 mb-4 shadow-inner text-primary/70 animate-pulse">
-							<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path></svg>
-						</div>
-						<h3 class="font-black uppercase tracking-widest text-xs mb-1 text-base-content/80">WORKSPACE EMPTY</h3>
-						<p class="text-[10px] leading-relaxed opacity-50 mb-5">
-							No modifications detected in your active `.git` workspace. Open files in your local project to begin tracking your duties.
-						</p>
-						<div class="flex flex-wrap gap-2 justify-center">
-							<div class="badge badge-sm badge-outline font-mono text-[8px] py-2 px-3 border-base-content/10 uppercase">Local Watcher Active</div>
-							<div class="badge badge-sm badge-outline font-mono text-[8px] py-2 px-3 border-base-content/10 uppercase">Auto Sync</div>
-						</div>
-					</div>
-				</div>
+			</div>
+		</main>
+	</div>
+
+	<!-- 3. VS Code Status Bar -->
+	<footer class="h-6 bg-primary text-primary-content flex items-center justify-between px-2 text-[11px] select-none shrink-0 font-medium z-10">
+		<div class="flex items-center gap-3">
+			
+			<!-- Branch info indicator -->
+			<div class="flex items-center gap-1.5 hover:bg-white/10 h-full px-2 cursor-pointer transition-colors">
+				<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M20.39 18.39A5 5 0 0 0 18 13H6"></path><path d="M6 9v6"></path></svg>
+				<span class="font-bold">main</span>
+			</div>
+
+			<!-- Refresh Sync -->
+			<button onclick={syncWithGit} class="flex items-center gap-1 hover:bg-white/10 h-full px-2 cursor-pointer transition-colors font-semibold" title="Synchronize local changes">
+				<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="{isSyncing ? 'animate-spin' : ''}"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+				Sync changes
+			</button>
+
+			<div class="opacity-50">|</div>
+
+			<!-- Notification badge message -->
+			{#if successMessage}
+				<span class="text-[10px] font-black tracking-wide text-white animate-pulse">
+					[SYSTEM] {successMessage}
+				</span>
+			{:else if errorMessage}
+				<span class="text-[10px] font-black tracking-wide text-error-content">
+					[ERR] {errorMessage}
+				</span>
 			{/if}
 		</div>
 
-		<!-- Explorer UI Overlay (Sleek Blur HUD style) -->
-		{#if showExplorer}
-			<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md" in:fade>
-				<div class="card w-full max-w-xl bg-base-100 shadow-2xl border border-base-content/15 max-h-[75vh] flex flex-col rounded-[2rem] overflow-hidden" in:fly={{ y: 20 }}>
-					<div class="p-5 border-b border-base-content/10 bg-base-200/50 flex flex-col gap-3">
-						<div class="flex justify-between items-center">
-							<h3 class="font-black uppercase tracking-widest text-xs text-primary">Local Path Explorer</h3>
-							<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={() => showExplorer = false}>✕</button>
-						</div>
-						<div class="flex items-center gap-2">
-							<button type="button" class="btn btn-xs btn-ghost border border-base-content/10 h-8 px-2 rounded-lg" onclick={() => openExplorer(explorerParent)} title="Back">
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-							</button>
-							<div class="bg-base-200 px-3 py-1.5 rounded-lg border border-base-content/5 flex-1 font-mono text-[9px] truncate text-base-content/80 shadow-inner">
-								{explorerPath}
-							</div>
-						</div>
-					</div>
-
-					<div class="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 custom-scrollbar">
-						{#each explorerDirs as dir}
-							<button
-								type="button"
-								class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-primary/10 hover:text-primary transition-all text-left group border border-transparent hover:border-primary/10 bg-base-200/20"
-								onclick={() => openExplorer(explorerPath + pathSep + dir)}
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary/40 group-hover:text-primary transition-colors"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-								<span class="text-[10px] font-bold truncate text-base-content/80">{dir}</span>
-							</button>
-						{/each}
-					</div>
-
-					<div class="p-5 border-t border-base-content/10 bg-base-200/50 flex justify-between gap-4">
-						<button type="button" class="btn btn-ghost rounded-xl px-6 text-xs uppercase" onclick={() => showExplorer = false}>Cancel</button>
-						<button type="button" class="btn btn-primary rounded-xl px-6 font-black text-xs uppercase" onclick={selectFolder}>Select This Folder</button>
-					</div>
-				</div>
+		<div class="flex items-center gap-3">
+			<!-- Watcher Live blip status -->
+			<div class="flex items-center gap-1.5 hover:bg-white/10 h-full px-2 cursor-pointer transition-colors" title="Watcher monitoring details">
+				<span class="w-1.5 h-1.5 rounded-full {watcherStatus === 'live' ? 'bg-[#a3e635] animate-pulse shadow-[0_0_8px_rgba(163,230,53,0.8)]' : watcherStatus === 'connecting' ? 'bg-[#facc15]' : 'bg-[#f87171]'}"></span>
+				<span class="font-semibold text-[10px] font-mono lowercase">{watcherStatus}</span>
 			</div>
-		{/if}
 
-	</form>
+			<div class="opacity-40">|</div>
+			
+			<div class="hover:bg-white/10 h-full px-2 cursor-pointer transition-colors font-mono uppercase text-[10px]" onclick={() => showSettingsModal = true}>
+				UTF-8
+			</div>
+		</div>
+	</footer>
+
 </div>
 
-<!-- ── High-Tech Drag Ghost ── -->
+<!-- Staging Drag Floating Ghost -->
 {#if dragState && dragHasMoved}
 	<div
 		class="pointer-events-none fixed top-0 left-0 z-[9999] select-none"
@@ -1461,36 +1933,62 @@
 	>
 		<div class="bg-black/90 text-white rounded-xl p-3 border-2 border-primary shadow-[0_15px_45px_rgba(0,0,0,0.5)]">
 			<div class="flex items-center gap-2 mb-1">
-				<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse shrink-0"></span>
+				<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0"></span>
 				<span class="font-mono text-[10px] font-bold truncate text-white/90">{dragState.file.split(/[/\\]/).pop()}</span>
 			</div>
 			<div class="font-mono text-[8px] text-white/40 truncate mb-1.5">{dragState.file}</div>
 			<div class="text-[8px] font-mono font-black uppercase tracking-wider text-primary flex items-center gap-1 leading-none">
 				{#if dragState.fromStaged}
 					<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-					move to detected
+					unstage change
 				{:else}
 					<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-					move to staged
+					stage change
 				{/if}
 			</div>
 		</div>
 	</div>
 {/if}
 
-<style>
-	.custom-scrollbar::-webkit-scrollbar {
-		width: 5px;
-		height: 5px;
-	}
-	.custom-scrollbar::-webkit-scrollbar-track {
-		background: transparent;
-	}
-	.custom-scrollbar::-webkit-scrollbar-thumb {
-		background: rgba(var(--bc-rgb, 120, 120, 120), 0.15);
-		border-radius: 99px;
-	}
-	.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-		background: rgba(var(--bc-rgb, 120, 120, 120), 0.35);
-	}
-</style>
+<!-- Integration of system config popups -->
+<SettingsModal bind:open={showSettingsModal} />
+
+<!-- Explorer picker overlay popup -->
+{#if showExplorer}
+	<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md" in:fade>
+		<div class="card w-full max-w-xl bg-base-100 shadow-2xl border border-base-content/15 max-h-[75vh] flex flex-col rounded-[2rem] overflow-hidden" in:fly={{ y: 20 }}>
+			<div class="p-5 border-b border-base-content/10 bg-base-200/50 flex flex-col gap-3">
+				<div class="flex justify-between items-center">
+					<h3 class="font-black uppercase tracking-widest text-xs text-primary">Local Path Explorer</h3>
+					<button type="button" class="btn btn-xs btn-ghost btn-circle" onclick={() => showExplorer = false}>✕</button>
+				</div>
+				<div class="flex items-center gap-2">
+					<button type="button" class="btn btn-xs btn-ghost border border-base-content/10 h-8 px-2 rounded-lg" onclick={() => openExplorer(explorerParent)} title="Back">
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+					</button>
+					<div class="bg-base-200 px-3 py-1.5 rounded-lg border border-base-content/5 flex-1 font-mono text-[9px] truncate text-base-content/80 shadow-inner">
+						{explorerPath}
+					</div>
+				</div>
+			</div>
+
+			<div class="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 custom-scrollbar">
+				{#each explorerDirs as dir}
+					<button
+						type="button"
+						class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-primary/10 hover:text-primary transition-all text-left group border border-transparent hover:border-primary/10 bg-base-200/20"
+						onclick={() => openExplorer(explorerPath + pathSep + dir)}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary/40 group-hover:text-primary transition-colors"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+						<span class="text-[10px] font-bold truncate text-base-content/80">{dir}</span>
+					</button>
+				{/each}
+			</div>
+
+			<div class="p-5 border-t border-base-content/10 bg-base-200/50 flex justify-between gap-4">
+				<button type="button" class="btn btn-ghost rounded-xl px-6 text-xs uppercase" onclick={() => showExplorer = false}>Cancel</button>
+				<button type="button" class="btn btn-primary rounded-xl px-6 font-black text-xs uppercase" onclick={selectFolder}>Select This Folder</button>
+			</div>
+		</div>
+	</div>
+{/if}
