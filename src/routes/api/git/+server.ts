@@ -64,25 +64,37 @@ export const GET: RequestHandler = async ({ url }) => {
 			}
 		});
 
-		const getDirectoryDiff = (dirPath: string, relativeRoot: string): { diff: string; additions: number } => {
+		const getDirectoryDiff = (dirPath: string, relativeRoot: string, depth = 0): { diff: string; additions: number } => {
 			let diff = '';
 			let additions = 0;
+
+			// Prevent deep recursive scans or heap overflows on huge folders
+			if (depth > 4) return { diff, additions };
 
 			try {
 				const items = fs.readdirSync(dirPath);
 				for (const item of items) {
-					if (item === '.git' || item === 'node_modules' || item === '.svelte-kit') continue;
+					// Ignore common massive build artifacts and dependency folders
+					if ([
+						'.git', 'node_modules', '.svelte-kit', 'dist', 'build', 
+						'.vscode', 'out', 'target', 'vendor', '.gradle', '.idea', 'bin', 'obj'
+					].includes(item)) {
+						continue;
+					}
 					
 					const fullPath = path.join(dirPath, item);
 					const relPath = path.join(relativeRoot, item);
 					const stat = fs.lstatSync(fullPath);
 
 					if (stat.isDirectory()) {
-						const sub = getDirectoryDiff(fullPath, relPath);
+						const sub = getDirectoryDiff(fullPath, relPath, depth + 1);
 						diff += sub.diff;
 						additions += sub.additions;
 					} else if (stat.isFile()) {
 						try {
+							// Skip reading huge text files
+							if (stat.size > 200 * 1024) continue;
+
 							const content = fs.readFileSync(fullPath, 'utf8');
 							const dLines = content.split('\n');
 							diff += `\n--- ${relPath} ---\n`;
@@ -104,6 +116,24 @@ export const GET: RequestHandler = async ({ url }) => {
 
 			if (change.type !== 'Deleted') {
 				try {
+					// 1. Skip generating massive diff strings for huge/ignored files to prevent heavy CPU lags on big projects
+					const isHugeFile = (() => {
+						try {
+							const stats = fs.statSync(fullPath);
+							return stats.isFile() && stats.size > 250 * 1024; // > 250KB is considered huge for active diff parsing
+						} catch { return false; }
+					})();
+
+					if (isHugeFile) {
+						diffData = "File diff skipped (File too large)";
+						return {
+							...change,
+							functions: [],
+							diff: diffData,
+							stats: { additions: 0, deletions: 0 }
+						};
+					}
+
 					let diffCmd = change.isStaged
 						? `git -C "${targetPath}" diff --cached -U3 "${change.file}"`
 						: `git -C "${targetPath}" diff -U3 "${change.file}"`;
@@ -122,7 +152,11 @@ export const GET: RequestHandler = async ({ url }) => {
 							} else {
 								const content = fs.readFileSync(fullPath, 'utf8');
 								const dLines = content.split('\n');
-								diffData = dLines.map((l) => `+${l}`).join('\n');
+								// Only include the first 1000 lines of massive new files to avoid bloating client DOMs
+								diffData = dLines.slice(0, 1000).map((l) => `+${l}`).join('\n');
+								if (dLines.length > 1000) {
+									diffData += '\n... [Diff truncated to 1000 lines] ...\n';
+								}
 								diffStats.additions = dLines.length;
 
 								if (
@@ -155,7 +189,8 @@ export const GET: RequestHandler = async ({ url }) => {
 					} else {
 						// For standard diffs
 						try {
-							diffData = execSync(diffCmd).toString();
+							// Optimize execSync with limits
+							diffData = execSync(diffCmd, { timeout: 350, maxBuffer: 1024 * 1024 }).toString();
 							const dLines = diffData.split('\n');
 							dLines.forEach((l) => {
 								if (l.startsWith('+') && !l.startsWith('+++')) diffStats.additions++;

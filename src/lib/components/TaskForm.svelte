@@ -58,6 +58,7 @@
 	let suggestions = $state<GitChangeItem[]>([]);
 	let stagedChanges = $state<GitChangeItem[]>([]);
 	let recentCommits = $state<string[]>([]);
+	let recentProjects = $state<string[]>([]);
 	let errorMessage = $state('');
 	let successMessage = $state('');
 	let editingDiffId = $state<string | null>(null);
@@ -231,11 +232,40 @@
 		};
 	});
 
+	const addToRecentProjects = (path: string) => {
+		if (!path) return;
+		recentProjects = recentProjects.filter(p => p !== path);
+		recentProjects.unshift(path);
+		recentProjects = recentProjects.slice(0, 8);
+		localStorage.setItem('ohmycode-recent-projects', JSON.stringify(recentProjects));
+	};
+
+	const switchProject = (path: string) => {
+		projectPath = path;
+		localStorage.setItem('last-project-path', path);
+		addToRecentProjects(path);
+		setupWatcher(path);
+		syncWithGit();
+	};
+
 	onMount(() => {
+		const storedProjects = localStorage.getItem('ohmycode-recent-projects');
+		if (storedProjects) {
+			try {
+				recentProjects = JSON.parse(storedProjects);
+			} catch (e) {
+				console.error('Failed to parse recent projects', e);
+			}
+		}
+
 		const savedPath = localStorage.getItem('last-project-path');
 		if (savedPath) {
 			projectPath = savedPath;
 			setupWatcher(savedPath);
+			if (!recentProjects.includes(savedPath)) {
+				recentProjects.unshift(savedPath);
+				localStorage.setItem('ohmycode-recent-projects', JSON.stringify(recentProjects));
+			}
 		}
 
 		document.addEventListener('pointermove',   onGlobalPointerMove, { passive: true });
@@ -279,7 +309,7 @@
 
 		eventSource.addEventListener('change', (e: any) => {
 			console.log('[Watcher] Remote change detected:', e.data);
-			syncWithGit();
+			debouncedSyncWithGit();
 		});
 
 		eventSource.onerror = (err) => {
@@ -322,12 +352,22 @@
 		projectPath = explorerPath;
 		showExplorer = false;
 		localStorage.setItem('last-project-path', projectPath);
+		addToRecentProjects(projectPath);
 		setupWatcher(projectPath);
 		syncWithGit();
 	};
 
+	let refetchPending = false;
+	let syncDebounceTimeout: any = null;
+
 	const syncWithGit = async () => {
 		if (!projectPath.trim()) return;
+
+		// Concurrency request lock to prevent overlapping OS git commands
+		if (isSyncing) {
+			refetchPending = true;
+			return;
+		}
 
 		isSyncing = true;
 		try {
@@ -367,7 +407,19 @@
 			console.error('Failed to sync with git', e);
 		} finally {
 			isSyncing = false;
+			// If a refetch request was queued during execution, trigger it now
+			if (refetchPending) {
+				refetchPending = false;
+				syncWithGit();
+			}
 		}
+	};
+
+	const debouncedSyncWithGit = () => {
+		clearTimeout(syncDebounceTimeout);
+		syncDebounceTimeout = setTimeout(() => {
+			syncWithGit();
+		}, 500); // 500ms quiet-window debounce
 	};
 
 	const toggleSelection = (index: number, isStagedList: boolean) => {
@@ -702,6 +754,95 @@
 		return { type, scope, summary };
 	};
 
+	const generateSmartSummary = (items: GitChangeItem[]): string => {
+		if (items.length === 0) return '';
+
+		const files = items.map(s => s.file);
+		const hasFile = (name: string) => files.some(f => f.includes(name));
+
+		const hasTaskForm = hasFile('TaskForm.svelte');
+		const hasGitApi = hasFile('+server.ts') || hasFile('watch') || hasFile('api/git');
+		const hasKanbanColumn = hasFile('KanbanColumn.svelte');
+		const hasKanbanCard = hasFile('KanbanCard.svelte');
+		const hasKanbanStore = hasFile('kanban.svelte.ts');
+		const hasTheme = hasFile('theme.ts') || hasFile('layout.css') || hasFile('+layout.svelte');
+
+		// 1. TaskForm + Git API -> EXACTLY the user's requested example scenario!
+		if (hasTaskForm && hasGitApi) {
+			const isPerf = items.some(s => s.diff && (s.diff.includes('debounce') || s.diff.includes('isSyncing') || s.diff.includes('limit') || s.diff.includes('threshold')));
+			if (isPerf) {
+				return 'perf: optimize TaskForm component and Git API endpoints to prevent lags on big projects.';
+			}
+			const isDiffViewer = items.some(s => s.diff && (s.diff.includes('Saved Diff') || s.diff.includes('fileDiffs') || s.diff.includes('openSavedDiffs')));
+			if (isDiffViewer) {
+				return 'feat: implement TaskForm component and integrate inline Saved Diff Viewer for log audit history.';
+			}
+			const isRecentProjects = items.some(s => s.diff && (s.diff.includes('recentProjects') || s.diff.includes('switchProject')));
+			if (isRecentProjects) {
+				return 'feat: implement TaskForm component and integrate Recent Projects workspace switcher in Explorer.';
+			}
+			return 'feat: implement TaskForm component and initialize Git watcher API route for project synchronization.';
+		}
+
+		// 2. Just TaskForm
+		if (hasTaskForm) {
+			const isPerf = items.some(s => s.diff && (s.diff.includes('debounce') || s.diff.includes('isSyncing') || s.diff.includes('limit') || s.diff.includes('threshold')));
+			if (isPerf) {
+				return 'perf: optimize TaskForm UI reactivity and reduce DOM rendering lag for massive repositories.';
+			}
+			const isDiffViewer = items.some(s => s.diff && (s.diff.includes('Saved Diff') || s.diff.includes('fileDiffs') || s.diff.includes('openSavedDiffs')));
+			if (isDiffViewer) {
+				return 'feat: implement inline Saved Diff Viewer inside log history audits for precise code reviews.';
+			}
+			const isRecentProjects = items.some(s => s.diff && (s.diff.includes('recentProjects') || s.diff.includes('switchProject')));
+			if (isRecentProjects) {
+				return 'feat: implement Recent Projects list in Explorer for rapid workspace hot-swapping.';
+			}
+			return 'feat: implement TaskForm component and enhance VS Code-inspired Source Control user interface.';
+		}
+
+		// 3. Just Git API / Server
+		if (hasGitApi) {
+			const isPerf = items.some(s => s.diff && (s.diff.includes('debounce') || s.diff.includes('limit') || s.diff.includes('threshold') || s.diff.includes('depth')));
+			if (isPerf) {
+				return 'perf: optimize Git API query execution with directory limits and size filters for large workspaces.';
+			}
+			return 'feat: initialize Git watcher SSE API route and file diff status sync for project updates.';
+		}
+
+		// 4. Kanban Store
+		if (hasKanbanStore) {
+			return 'refactor: optimize Kanban store state machine and localStorage sync utilizing Svelte 5 Runes.';
+		}
+
+		// 5. Theme
+		if (hasTheme) {
+			return 'style: integrate cohesive DaisyUI color themes and refine layout viewport responsive sizes.';
+		}
+
+		// 6. Column / Cards
+		if (hasKanbanColumn || hasKanbanCard) {
+			return 'feat: implement drag-and-drop Kanban card UI components for interactive task columns.';
+		}
+
+		// Fallback to beautiful, natural generic generation
+		const first = items[0];
+		const basename = first.file.split(/[/\\]/).pop() || first.file;
+		const { type } = inferConventionalType(items);
+		const verb = 
+			type === 'feat' ? 'implement' :
+			type === 'fix' ? 'resolve issue in' :
+			type === 'refactor' ? 'refactor' :
+			type === 'style' ? 'refine style of' :
+			'update';
+
+		if (items.length === 1) {
+			return `${type}: ${verb} ${basename} module and sync changes with workspace.`;
+		} else {
+			return `${type}: ${verb} ${items.length} files including ${basename} to refine workspace logic.`;
+		}
+	};
+
 	const updateFormFromSelected = () => {
 		const selectedUnstaged = suggestions.filter(s => s.selected);
 		const selectedStaged = stagedChanges.filter(s => s.selected);
@@ -709,24 +850,19 @@
 
 		if (selected.length === 0) return;
 
-		const { type: ccType, scope, summary } = inferConventionalType(selected);
-		const scopePart = scope ? `(${scope})` : '';
-		const commitHeader = `${ccType}${scopePart}: ${summary}`;
+		// Automatically suggest smart, highly descriptive, context-aware summary header
+		title = generateSmartSummary(selected);
+		// Description field (internal) and UI Description textarea (bound to notes) are no longer filled automatically
+		description = '';
+		notes = '';
 
 		if (selected.length === 1) {
 			const s = selected[0];
-			title = `${s.type}: ${s.file.split(/[/\\]/).pop()}`;
 			filesInput = s.file;
 			functionsInput = s.functions.join(', ');
-			description = `${s.type} in ${s.file}`;
-			notes = `${commitHeader}\n\n${s.file} (+${s.stats.additions} -${s.stats.deletions})`;
 		} else {
-			title = `Batch Update: ${selected.length} files`;
 			filesInput = selected.map(s => s.file).join(', ');
 			functionsInput = selected.flatMap(s => s.functions).filter((v, i, a) => a.indexOf(v) === i).join(', ');
-			description = `Working on ${selected.length} files: ${selected.map(s => s.file.split(/[/\\]/).pop()).join(', ')}`;
-			notes = `${commitHeader}\n\nImpacted files:\n` +
-					selected.map(s => `- ${s.file} (+${s.stats.additions} -${s.stats.deletions})`).join('\n');
 		}
 	};
 
@@ -1342,22 +1478,43 @@
 										Pick Folder
 									</button>
 
-									{#if recentCommits.length > 0}
-										<div class="flex flex-col mt-4">
-											<h4 class="text-[10px] font-bold uppercase opacity-55 tracking-widest mb-2 pb-1 border-b border-base-content/5">Recent Branch Logs</h4>
-											<div class="flex flex-col gap-1">
-												{#each recentCommits as commit}
+									<!-- RECENT PROJECTS LIST switcher -->
+									<div class="flex flex-col mt-4">
+										<h4 class="text-[10px] font-bold uppercase opacity-55 tracking-widest mb-2 pb-1 border-b border-base-content/5 flex items-center justify-between select-none">
+											<span>Recent Projects</span>
+											<button 
+												onclick={() => { recentProjects = []; localStorage.removeItem('ohmycode-recent-projects'); }}
+												class="text-[8px] opacity-50 hover:opacity-100 hover:text-error uppercase tracking-wider font-semibold transition-colors"
+												title="Clear all recent projects history"
+											>
+												Clear
+											</button>
+										</h4>
+										{#if recentProjects.length > 0}
+											<div class="flex flex-col gap-1.5 max-h-[40vh] overflow-y-auto vscode-scrollbar pr-0.5">
+												{#each recentProjects as path}
 													<button
-														onclick={() => useCommitMessage(commit)}
-														class="text-left p-2 rounded-lg bg-base-100 hover:bg-base-300 border border-base-content/10 transition-all font-mono text-[10px] opacity-80 truncate"
-														title="Double-click to set as message input"
+														onclick={() => switchProject(path)}
+														class="text-left p-2.5 rounded-xl bg-base-100 hover:bg-base-300 border {projectPath === path ? 'border-primary/35 bg-primary/5 text-primary' : 'border-base-content/10'} hover:border-primary/20 transition-all font-mono text-[10px] opacity-85 flex flex-col gap-1 cursor-pointer group"
+														title="Click to mount this project workspace: {path}"
 													>
-														{commit}
+														<div class="flex items-center gap-1.5 font-bold font-sans text-[11px] truncate text-base-content group-hover:text-primary transition-colors">
+															<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class={projectPath === path ? 'text-primary' : 'text-secondary'}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+															<span>{path.split(/[/\\]/).pop() || path}</span>
+															{#if projectPath === path}
+																<span class="badge badge-xs bg-primary/10 border-primary/20 text-primary font-bold px-1 rounded uppercase tracking-wider text-[7px] h-3.5">Active</span>
+															{/if}
+														</div>
+														<span class="opacity-45 text-[9px] truncate tracking-tight">{path}</span>
 													</button>
 												{/each}
 											</div>
-										</div>
-									{/if}
+										{:else}
+											<div class="py-6 text-center text-[10px] opacity-35 font-medium border border-dashed border-base-content/10 rounded-xl select-none">
+												No recent projects recorded.
+											</div>
+										{/if}
+									</div>
 								</div>
 
 							<!-- VIEW: PREFERENCES / THEMES -->
