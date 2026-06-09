@@ -1,8 +1,7 @@
 import { json } from '@sveltejs/kit';
-import { execSync } from 'child_process';
 import type { RequestHandler } from './$types';
 import fs from 'fs';
-import path from 'path';
+import { runGit } from '$lib/server/git';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const projectPath = url.searchParams.get('path');
@@ -17,10 +16,10 @@ export const GET: RequestHandler = async ({ url }) => {
 		// 1. If 'commit' and 'file' are provided, fetch the actual file diff at that commit hash
 		if (commitHash && file) {
 			try {
-				const diffOutput = execSync(
-					`git -C "${projectPath}" show "${commitHash}" -- "${file}"`,
-					{ timeout: 1000, maxBuffer: 1024 * 1024 }
-				).toString();
+				const diffOutput = runGit(projectPath, ['show', commitHash, '--', file], {
+					timeout: 1000,
+					maxBuffer: 1024 * 1024
+				});
 				return json({ success: true, diff: diffOutput });
 			} catch (e) {
 				return json({ success: false, error: 'Failed to fetch commit file diff' }, { status: 500 });
@@ -31,10 +30,11 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (commitHash) {
 			try {
 				// git show --name-status --oneline <hash>
-				const showOutput = execSync(
-					`git -C "${projectPath}" show --name-status --pretty=format:"" "${commitHash}"`,
+				const showOutput = runGit(
+					projectPath,
+					['show', '--name-status', '--pretty=format:', commitHash],
 					{ timeout: 1000 }
-				).toString();
+				);
 
 				const lines = showOutput.split('\n').filter(l => l.trim() !== '');
 				const changedFiles = lines.map(line => {
@@ -64,10 +64,11 @@ export const GET: RequestHandler = async ({ url }) => {
 		}
 
 		// 3. Otherwise, return the latest 15 commits from the repository
-		const logOutput = execSync(
-			`git -C "${projectPath}" log -n 15 --pretty=format:"%h|%an|%ad|%s|%d" --date=short`,
+		const logOutput = runGit(
+			projectPath,
+			['log', '-n', '15', '--pretty=format:%h|%an|%ad|%s|%d', '--date=short'],
 			{ timeout: 1500 }
-		).toString();
+		);
 
 		const lines = logOutput.split('\n').filter(l => l.trim() !== '');
 		const commits = lines.map(line => {

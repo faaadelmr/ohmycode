@@ -4,8 +4,9 @@
 	import { fade, slide, fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import { theme, themes } from '$lib/theme';
-	import KanbanCard from './KanbanCard.svelte';
+	import CommitForm from './CommitForm.svelte';
 	import SettingsModal from './SettingsModal.svelte';
+	import StatusBar from './StatusBar.svelte';
 
 	let title = $state('');
 	let description = $state('');
@@ -96,6 +97,11 @@
 	let dragHasMoved         = $derived(dragState !== null && (Math.abs(dragState.curX - dragState.startX) > 4 || Math.abs(dragState.curY - dragState.startY) > 4));
 	let isDraggingToStaged   = $derived(dragState !== null && !dragState.fromStaged && dropTarget === 'staged');
 	let isDraggingToUnstaged = $derived(dragState !== null &&  dragState.fromStaged && dropTarget === 'unstaged');
+	let selectedChangeCount = $derived([...stagedChanges, ...suggestions].filter((s) => s.selected).length);
+	let hasGitCommitTargets = $derived(selectedChangeCount > 0 || stagedChanges.length > 0);
+	let canSubmitLog = $derived(
+		Boolean(title.trim()) && !isCommitting && (!includeGitCommit || (Boolean(projectPath) && hasGitCommitTargets))
+	);
 
 	let stagedZoneClass = $derived(
 		!dragState               ? 'border-dashed border-base-300 bg-base-100/50' :
@@ -233,7 +239,7 @@
 		const key = `${taskId}-${file}`;
 		openSavedDiffs[key] = !openSavedDiffs[key];
 
-		// If it is a real Git commit (id is short commit hash) and we haven't loaded the diff yet, load it on-demand!
+		// Load saved or Git commit diffs on-demand so localStorage stays small.
 		if (openSavedDiffs[key] && taskId.length <= 10) {
 			const tab = openTabs.find(t => t.id === `log-${taskId}`);
 			if (tab && tab.task && (!tab.task.fileDiffs || !tab.task.fileDiffs[file])) {
@@ -243,9 +249,34 @@
 					if (data.success && data.diff) {
 						if (!tab.task.fileDiffs) tab.task.fileDiffs = {};
 						tab.task.fileDiffs[file] = data.diff;
+						openTabs = [...openTabs];
 					}
 				} catch (e) {
 					console.error('Failed to fetch commit file diff', e);
+				}
+			}
+		}
+
+		if (openSavedDiffs[key] && taskId.length > 10) {
+			const tab = openTabs.find(t => t.id === `log-${taskId}`);
+			if (tab && tab.task && (!tab.task.fileDiffs || !tab.task.fileDiffs[file])) {
+				try {
+					const params = new URLSearchParams({
+						projectPath: tab.task.projectPath || projectPath,
+						file,
+						...(tab.task.logFolderName
+							? { logFolder: tab.task.logFolderName }
+							: { createdAt: String(tab.task.createdAt) })
+					});
+					const res = await fetch(`/api/log/diff?${params}`);
+					const data = await res.json();
+					if (data.success && data.diff) {
+						if (!tab.task.fileDiffs) tab.task.fileDiffs = {};
+						tab.task.fileDiffs[file] = data.diff;
+						openTabs = [...openTabs];
+					}
+				} catch (e) {
+					console.error('Failed to fetch saved file diff', e);
 				}
 			}
 		}
@@ -253,6 +284,14 @@
 
 	const isSavedFileDiffOpen = (taskId: string, file: string) => {
 		return !!openSavedDiffs[`${taskId}-${file}`];
+	};
+
+	const hasSavedFileDiff = (task: any, file: string) => {
+		return Boolean(task.fileDiffs?.[file] || task.hasSavedDiffs || task.id?.length <= 10);
+	};
+
+	const getSavedFileDiff = (task: any, file: string) => {
+		return task.fileDiffs?.[file] || '';
 	};
 
 	// Derived lists of logged duties filtered by search query
@@ -281,6 +320,9 @@
 						if (line.startsWith('-') && !line.startsWith('---')) deletions++;
 					});
 				});
+			} else if (t.diffStats) {
+				additions += t.diffStats.additions;
+				deletions += t.diffStats.deletions;
 			}
 		});
 
@@ -1019,6 +1061,9 @@
 		const shouldMove = target !== null && toStaged !== fromStaged;
 		if (!shouldMove) return;
 
+		const previousSuggestions = suggestions.map((item) => ({ ...item }));
+		const previousStagedChanges = stagedChanges.map((item) => ({ ...item }));
+
 		if (toStaged) {
 			const idx = suggestions.findIndex(s => s.file === file);
 			if (idx !== -1) {
@@ -1039,12 +1084,17 @@
 		setTimeout(() => { if (droppedFile === file) droppedFile = null; }, 700);
 
 		try {
-			await fetch('/api/git', {
+			const res = await fetch('/api/git', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ projectPath, file, stage: toStaged })
 			});
-		} catch {
+			const data = await res.json();
+			if (!data.success) throw new Error(data.error || data.raw || 'Git command failed');
+		} catch (e) {
+			suggestions = previousSuggestions;
+			stagedChanges = previousStagedChanges;
+			errorMessage = (e as Error).message;
 			syncWithGit();
 		}
 	};
@@ -1052,6 +1102,9 @@
 	const moveFile = async (e: MouseEvent, fileName: string, toStaged: boolean) => {
 		e.stopPropagation();
 		if (!projectPath) return;
+
+		const previousSuggestions = suggestions.map((item) => ({ ...item }));
+		const previousStagedChanges = stagedChanges.map((item) => ({ ...item }));
 
 		if (toStaged) {
 			const idx = suggestions.findIndex((s) => s.file === fileName);
@@ -1072,18 +1125,26 @@
 		updateFormFromSelected();
 
 		try {
-			await fetch('/api/git', {
+			const res = await fetch('/api/git', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ projectPath, file: fileName, stage: toStaged })
 			});
-		} catch {
+			const data = await res.json();
+			if (!data.success) throw new Error(data.error || data.raw || 'Git command failed');
+		} catch (e) {
+			suggestions = previousSuggestions;
+			stagedChanges = previousStagedChanges;
+			errorMessage = (e as Error).message;
 			syncWithGit();
 		}
 	};
 
 	const moveAll = async (toStaged: boolean) => {
 		if (!projectPath) return;
+
+		const previousSuggestions = suggestions.map((item) => ({ ...item }));
+		const previousStagedChanges = stagedChanges.map((item) => ({ ...item }));
 
 		if (toStaged) {
 			stagedChanges.push(...suggestions.map((s) => ({ ...s, isStaged: true, selected: true })));
@@ -1096,12 +1157,17 @@
 		updateFormFromSelected();
 
 		try {
-			await fetch('/api/git', {
+			const res = await fetch('/api/git', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ projectPath, all: true, stage: toStaged })
 			});
-		} catch {
+			const data = await res.json();
+			if (!data.success) throw new Error(data.error || data.raw || 'Git command failed');
+		} catch (e) {
+			suggestions = previousSuggestions;
+			stagedChanges = previousStagedChanges;
+			errorMessage = (e as Error).message;
 			syncWithGit();
 		}
 	};
@@ -1148,7 +1214,7 @@
 
 	const handleSubmit = async (e?: SubmitEvent) => {
 		if (e) e.preventDefault();
-		if (!title.trim()) return;
+		if (!canSubmitLog) return;
 
 		const selectedItems = [...stagedChanges, ...suggestions].filter(s => s.selected);
 		const selectedFiles = selectedItems.map(s => s.file);
@@ -1204,7 +1270,7 @@
 		const newTask = kanbanStore.addTask(title, files, functions, description, notes, projectPath, fileDiffs, gitCommitHash);
 
 		if (projectPath) {
-			kanbanStore.syncToLocal(newTask, projectPath, includeGitCommit);
+			kanbanStore.syncToLocal(newTask, projectPath, includeGitCommit, fileDiffs);
 		}
 
 		title = '';
@@ -1322,57 +1388,17 @@
 					{#if activeSidebar === 'source-control'}
 						<div class="p-3 flex flex-col gap-3 h-full">
 							
-							<!-- Commit Form Section styled as VS Code Message Input -->
-							<div class="flex flex-col gap-2 bg-base-100 p-3 rounded-xl border border-base-content/10 shadow-sm">
-								
-								<!-- Form Field: Title Summary -->
-								<div class="form-control">
-									<input
-										type="text"
-										bind:value={title}
-										placeholder="Summary (Required, e.g. feat: add login)"
-										class="input input-sm w-full bg-base-200/50 focus:bg-base-200 border-base-content/10 focus:border-primary focus:ring-1 focus:ring-primary rounded-lg text-xs"
-										required
-										onkeydown={handleCommitKeyDown}
-									/>
-								</div>
-
-								<!-- Form Field: Message / Bullet Points -->
-								<div class="form-control">
-									<textarea
-										bind:value={notes}
-										placeholder="Description (Ctrl+Enter to commit & save log)"
-										class="textarea textarea-sm w-full bg-base-200/50 focus:bg-base-200 border-base-content/10 focus:border-primary focus:ring-1 focus:ring-primary rounded-lg text-[11px] leading-relaxed min-h-[90px] font-mono"
-										onkeydown={handleCommitKeyDown}
-									></textarea>
-								</div>
-
-								<!-- Toggle: Git Auto commit -->
-								<div class="flex items-center justify-between pt-1 border-t border-base-content/5 mt-1">
-									<div class="flex flex-col text-left">
-										<span class="text-[9px] uppercase font-black tracking-wider text-primary">Stage & Commit Git</span>
-										<span class="text-[8px] opacity-40">Auto-commit with daily task log</span>
-									</div>
-									<input 
-										type="checkbox" 
-										class="toggle toggle-primary toggle-xs" 
-										bind:checked={includeGitCommit} 
-										disabled={!projectPath} 
-									/>
-								</div>
-
-								<!-- Big Blue Commit Button -->
-								<button
-									onclick={() => handleSubmit()}
-									class="btn btn-sm btn-primary w-full rounded-lg font-bold text-xs gap-1.5 mt-1 shadow-md hover:shadow-primary/20 {isCommitting ? 'loading' : ''}"
-									disabled={isCommitting || !title.trim()}
-								>
-									{#if !isCommitting}
-										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-									{/if}
-									Commit & Log Task
-								</button>
-							</div>
+								<CommitForm
+									bind:title
+									bind:notes
+									bind:includeGitCommit
+									{projectPath}
+									{isCommitting}
+									{canSubmitLog}
+									{hasGitCommitTargets}
+									onSubmit={() => handleSubmit()}
+									onCommitKeyDown={handleCommitKeyDown}
+								/>
 
 							<!-- Collapsible Section: STAGED CHANGES -->
 							<div class="flex flex-col mt-2">
@@ -2287,7 +2313,7 @@
 
 																	<div class="flex items-center gap-1.5">
 																		<!-- View Saved Diff button if diff exists -->
-																		{#if task.fileDiffs && task.fileDiffs[file]}
+																		{#if hasSavedFileDiff(task, file)}
 																			<button 
 																				onclick={() => toggleSavedFileDiff(task.id, file)}
 																				class="btn btn-xs {isSavedFileDiffOpen(task.id, file) ? 'btn-primary' : 'btn-outline border-base-content/15'} rounded-md font-bold text-[10px] uppercase tracking-wider"
@@ -2315,18 +2341,18 @@
 																</div>
 
 																<!-- Expandable inline code-diff view of what has changed -->
-																{#if task.fileDiffs && task.fileDiffs[file] && isSavedFileDiffOpen(task.id, file)}
+																{#if getSavedFileDiff(task, file) && isSavedFileDiffOpen(task.id, file)}
 																	<div class="mt-3 border border-base-content/10 bg-[#1e1e1e] text-white rounded-lg overflow-hidden text-left shadow-inner">
 																		<div class="bg-base-300 px-3 py-1.5 text-[10px] font-mono uppercase font-bold opacity-65 flex justify-between items-center border-b border-base-content/10">
 																			<span>Saved Diff Viewer</span>
 																			<span class="text-[9px] text-success font-mono font-bold">
-																				+{task.fileDiffs[file].split('\n').filter((l: string) => l.startsWith('+') && !l.startsWith('+++')).length} insertions
+																				+{getSavedFileDiff(task, file).split('\n').filter((l: string) => l.startsWith('+') && !l.startsWith('+++')).length} insertions
 																				<span class="opacity-40 font-mono">|</span>
-																				<span class="text-error font-mono">-{task.fileDiffs[file].split('\n').filter((l: string) => l.startsWith('-') && !l.startsWith('---')).length} deletions</span>
+																				<span class="text-error font-mono">-{getSavedFileDiff(task, file).split('\n').filter((l: string) => l.startsWith('-') && !l.startsWith('---')).length} deletions</span>
 																			</span>
 																		</div>
 																		<div class="p-2 font-mono text-[11px] leading-relaxed select-text overflow-x-auto max-h-[40vh] vscode-scrollbar">
-																			{#each buildDiffEditorRows(task.fileDiffs[file]) as row (row.key)}
+																			{#each buildDiffEditorRows(getSavedFileDiff(task, file)) as row (row.key)}
 																				<div class="flex min-h-[18px]">
 																					{#if row.kind === 'hunk'}
 																						<div class="w-full bg-[#2d2d2d] text-base-content/40 py-0.5 px-3 font-semibold select-none font-mono text-[9px]">
@@ -2357,7 +2383,7 @@
 																				</div>
 																			{:else}
 																				<div class="p-4 whitespace-pre font-mono text-xs opacity-40">
-																					{task.fileDiffs[file]}
+																					{getSavedFileDiff(task, file)}
 																				</div>
 																			{/each}
 																		</div>
@@ -2411,54 +2437,14 @@
 		</main>
 	</div>
 
-	<!-- 3. VS Code Status Bar -->
-	<footer class="h-6 bg-primary text-primary-content flex items-center justify-between px-2 text-[11px] select-none shrink-0 font-medium z-10">
-		<div class="flex items-center gap-3">
-			
-			<!-- Branch info indicator -->
-			<div class="flex items-center gap-1.5 hover:bg-white/10 h-full px-2 cursor-pointer transition-colors">
-				<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M20.39 18.39A5 5 0 0 0 18 13H6"></path><path d="M6 9v6"></path></svg>
-				<span class="font-bold">main</span>
-			</div>
-
-			<!-- Refresh Sync -->
-			<button onclick={syncWithGit} class="flex items-center gap-1 hover:bg-white/10 h-full px-2 cursor-pointer transition-colors font-semibold" title="Synchronize local changes">
-				<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="{isSyncing ? 'animate-spin' : ''}"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-				Sync changes
-			</button>
-
-			<div class="opacity-50">|</div>
-
-			<!-- Notification badge message -->
-			{#if successMessage}
-				<span class="text-[10px] font-black tracking-wide text-white animate-pulse">
-					[SYSTEM] {successMessage}
-				</span>
-			{:else if errorMessage}
-				<span class="text-[10px] font-black tracking-wide text-error-content">
-					[ERR] {errorMessage}
-				</span>
-			{/if}
-		</div>
-
-		<div class="flex items-center gap-3">
-			<!-- Watcher Live blip status -->
-			<div class="flex items-center gap-1.5 hover:bg-white/10 h-full px-2 cursor-pointer transition-colors" title="Watcher monitoring details">
-				<span class="w-1.5 h-1.5 rounded-full {watcherStatus === 'live' ? 'bg-[#a3e635] animate-pulse shadow-[0_0_8px_rgba(163,230,53,0.8)]' : watcherStatus === 'connecting' ? 'bg-[#facc15]' : 'bg-[#f87171]'}"></span>
-				<span class="font-semibold text-[10px] font-mono lowercase">{watcherStatus}</span>
-			</div>
-
-			<div class="opacity-40">|</div>
-			
-			<button
-				type="button"
-				class="hover:bg-white/10 h-full px-2 cursor-pointer transition-colors font-mono uppercase text-[10px]"
-				onclick={() => showSettingsModal = true}
-			>
-				UTF-8
-			</button>
-		</div>
-	</footer>
+		<StatusBar
+			{isSyncing}
+			{watcherStatus}
+			{successMessage}
+			{errorMessage}
+			onSync={syncWithGit}
+			onOpenSettings={() => (showSettingsModal = true)}
+		/>
 
 </div>
 

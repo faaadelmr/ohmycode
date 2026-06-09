@@ -1,8 +1,17 @@
 import { json } from '@sveltejs/kit';
-import { execSync } from 'child_process';
 import type { RequestHandler } from './$types';
 import fs from 'fs';
 import path from 'path';
+import { getStatusPorcelain, runGit } from '$lib/server/git';
+
+const resolveSafeFilePath = (projectPath: string, file: string) => {
+	const root = path.resolve(projectPath);
+	const fullPath = path.resolve(root, file);
+	const relativePath = path.relative(root, fullPath);
+
+	if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) return null;
+	return fullPath;
+};
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
@@ -15,9 +24,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (all) {
 			try {
 				// Discard all UNSTAGED tracked changes
-				execSync(`git -C "${projectPath}" checkout -- .`);
+				runGit(projectPath, ['checkout', '--', '.']);
 				// Remove all untracked files/dirs
-				execSync(`git -C "${projectPath}" clean -fd`);
+				runGit(projectPath, ['clean', '-fd']);
 				return json({ success: true });
 			} catch (err: any) {
 				return json({ 
@@ -34,11 +43,14 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		try {
 			// Check status to see if it's untracked
-			const statusOutput = execSync(`git -C "${projectPath}" status --porcelain "${file}"`).toString();
+			const statusOutput = getStatusPorcelain(projectPath, file);
 			const isUntracked = statusOutput.startsWith('??');
+			const fullPath = resolveSafeFilePath(projectPath, file);
+			if (!fullPath) {
+				return json({ success: false, error: 'Invalid file path' }, { status: 400 });
+			}
 
 			if (isUntracked) {
-				const fullPath = path.resolve(projectPath, file);
 				if (fs.existsSync(fullPath)) {
 					if (fs.lstatSync(fullPath).isDirectory()) {
 						fs.rmSync(fullPath, { recursive: true, force: true });
@@ -48,7 +60,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				}
 			} else {
 				// Revert tracked file
-				execSync(`git -C "${projectPath}" checkout -- "${file}"`);
+				runGit(projectPath, ['checkout', '--', file]);
 			}
 
 			return json({ success: true });

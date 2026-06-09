@@ -8,8 +8,14 @@
 	let logStoragePath = $state('');
 	let defaultLogsRoot = $state('');
 	let currentLogsRoot = $state('');
+	let gitAuthorName = $state('');
+	let gitAuthorEmail = $state('');
+	let globalGitAuthorName = $state('');
+	let globalGitAuthorEmail = $state('');
+	let updateGlobalGitAuthor = $state(false);
 	let isLoadingSettings = $state(false);
 	let isSaving = $state(false);
+	let isSavingGitAuthor = $state(false);
 
 	// ─── Export State ──────────────────────────────────────────────────
 	let isExporting = $state(false);
@@ -53,6 +59,11 @@
 				logStoragePath = data.settings.logStoragePath ?? '';
 				defaultLogsRoot = data.defaultLogsRoot ?? '';
 				currentLogsRoot = data.logsRoot ?? '';
+				gitAuthorName = data.gitAuthor?.name ?? '';
+				gitAuthorEmail = data.gitAuthor?.email ?? '';
+				globalGitAuthorName = data.gitAuthor?.globalName ?? '';
+				globalGitAuthorEmail = data.gitAuthor?.globalEmail ?? '';
+				updateGlobalGitAuthor = data.gitAuthor?.updateGlobal ?? false;
 			}
 		} catch {
 			showMsg('error', 'Failed to load settings');
@@ -85,6 +96,41 @@
 
 	function resetToDefault() {
 		logStoragePath = '';
+	}
+
+	async function saveGitAuthor() {
+		if (!gitAuthorName.trim()) {
+			showMsg('error', 'Git author name is required');
+			return;
+		}
+
+		isSavingGitAuthor = true;
+		try {
+			const res = await fetch('/api/settings', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					gitAuthorName: gitAuthorName.trim(),
+					gitAuthorEmail: gitAuthorEmail.trim(),
+					updateGlobalGitAuthor
+				})
+			});
+			const data = await res.json();
+			if (data.success) {
+				gitAuthorName = data.gitAuthor?.name ?? gitAuthorName;
+				gitAuthorEmail = data.gitAuthor?.email ?? gitAuthorEmail;
+				globalGitAuthorName = data.gitAuthor?.globalName ?? globalGitAuthorName;
+				globalGitAuthorEmail = data.gitAuthor?.globalEmail ?? globalGitAuthorEmail;
+				updateGlobalGitAuthor = data.gitAuthor?.updateGlobal ?? updateGlobalGitAuthor;
+				showMsg('success', 'Git author saved!');
+			} else {
+				showMsg('error', data.error ?? 'Failed to save Git author');
+			}
+		} catch {
+			showMsg('error', 'Connection error');
+		} finally {
+			isSavingGitAuthor = false;
+		}
 	}
 
 	// ─── Folder Picker ─────────────────────────────────────────────────
@@ -319,7 +365,59 @@
 
 				<div class="divider my-0 opacity-30"></div>
 
-				<!-- ── Section 2: Export ── -->
+				<!-- ── Section 2: Git Author ── -->
+				<section>
+					<div class="flex items-center gap-2 mb-4">
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M16 18l6-6-6-6"></path><path d="M8 6l-6 6 6 6"></path></svg>
+						<span class="text-[10px] font-black uppercase tracking-widest opacity-60">Git Author</span>
+					</div>
+
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+						<input
+							type="text"
+							bind:value={gitAuthorName}
+							placeholder="Author name"
+							class="input input-bordered input-sm font-mono text-xs focus:border-primary rounded-xl"
+						/>
+						<input
+							type="email"
+							bind:value={gitAuthorEmail}
+							placeholder="Author email"
+							class="input input-bordered input-sm font-mono text-xs focus:border-primary rounded-xl"
+						/>
+					</div>
+
+					<div class="flex items-center gap-2 mt-3">
+						<label class="flex items-center gap-2 text-[10px] font-bold opacity-70 cursor-pointer">
+							<input
+								type="checkbox"
+								class="checkbox checkbox-xs checkbox-primary"
+								bind:checked={updateGlobalGitAuthor}
+							/>
+							Update global Git config
+						</label>
+						<button
+							type="button"
+							class="btn btn-xs btn-primary rounded-full font-black px-6 ml-auto gap-1.5"
+							onclick={saveGitAuthor}
+							disabled={isSavingGitAuthor || !gitAuthorName.trim()}
+						>
+							{#if isSavingGitAuthor}
+								<span class="loading loading-spinner loading-xs"></span>
+							{:else}
+								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+							{/if}
+							Save Author
+						</button>
+					</div>
+					<div class="mt-2 font-mono text-[10px] opacity-50 truncate">
+						Global Git: {globalGitAuthorName || 'not set'}{globalGitAuthorEmail ? ` <${globalGitAuthorEmail}>` : ''}
+					</div>
+				</section>
+
+				<div class="divider my-0 opacity-30"></div>
+
+				<!-- ── Section 3: Export ── -->
 				<section>
 					<div class="flex items-center gap-2 mb-4">
 						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>

@@ -5,6 +5,29 @@ import AdmZip from 'adm-zip';
 import fs from 'fs';
 import path from 'path';
 
+function summarizeDiffs(fileDiffs?: Record<string, string>) {
+	const stats = { additions: 0, deletions: 0 };
+	if (!fileDiffs) return stats;
+
+	for (const diff of Object.values(fileDiffs)) {
+		diff.split('\n').forEach((line) => {
+			if (line.startsWith('+') && !line.startsWith('+++')) stats.additions++;
+			if (line.startsWith('-') && !line.startsWith('---')) stats.deletions++;
+		});
+	}
+
+	return stats;
+}
+
+function stripHeavyTaskFields(task: any) {
+	const { fileDiffs, ...lightTask } = task;
+	return {
+		...lightTask,
+		hasSavedDiffs: lightTask.hasSavedDiffs ?? Boolean(fileDiffs && Object.keys(fileDiffs).length > 0),
+		diffStats: lightTask.diffStats ?? summarizeDiffs(fileDiffs)
+	};
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const contentType = request.headers.get('content-type') ?? '';
@@ -90,11 +113,13 @@ export const POST: RequestHandler = async ({ request }) => {
 			restoredFiles++;
 		}
 
+		const tasks = manifest.tasks.map(stripHeavyTaskFields);
+
 		return json({
 			success: true,
-			tasks: manifest.tasks,
+			tasks,
 			stats: {
-				tasks: manifest.tasks.length,
+				tasks: tasks.length,
 				files: restoredFiles
 			}
 		});

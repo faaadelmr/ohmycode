@@ -1,9 +1,13 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getLogsRoot } from '$lib/server/settings';
+import { getLogsRoot, getSettings } from '$lib/server/settings';
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import {
+	getCurrentBranch,
+	getLatestCommitField,
+	readGitConfigValue
+} from '$lib/server/git';
 
 /**
  * Derive the next sequential folder name for a given project.
@@ -45,17 +49,12 @@ function buildFolderName(projectLogsDir: string, title: string): string {
 	return `${paddedNum}. ${safeTitle}`;
 }
 
-function readGitConfigValue(projectPath: string, key: string) {
-	const commands = [`git config --global --get ${key}`, `git -C "${projectPath}" config --get ${key}`];
+function resolveSafeChildPath(root: string, relativeFile: string) {
+	const fullPath = path.resolve(root, relativeFile);
+	const relativePath = path.relative(root, fullPath);
 
-	for (const command of commands) {
-		try {
-			const value = execSync(command, { stdio: 'pipe' }).toString().trim();
-			if (value) return value;
-		} catch (e) {}
-	}
-
-	return '';
+	if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) return null;
+	return fullPath;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -74,6 +73,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const folderName = buildFolderName(projectLogsDir, task.title);
 		const targetDir = path.join(projectLogsDir, folderName);
 		const sourceFilesDir = path.join(targetDir, 'files');
+		const diffsDir = path.join(targetDir, 'diffs');
 
 		if (!fs.existsSync(sourceFilesDir)) {
 			fs.mkdirSync(sourceFilesDir, { recursive: true });
@@ -90,16 +90,17 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		if (fs.existsSync(projectPath)) {
 			try {
-				branchName = execSync(`git -C "${projectPath}" rev-parse --abbrev-ref HEAD`, { stdio: 'pipe' }).toString().trim();
+				branchName = getCurrentBranch(projectPath);
 			} catch (e) {}
 
 			try {
-				authorName = readGitConfigValue(projectPath, 'user.name') || 'N/A';
+				const settings = getSettings();
+				authorName = settings.gitAuthorName?.trim() || readGitConfigValue(projectPath, 'user.name') || 'N/A';
 			} catch (e) {}
 
 			try {
-				commitHash = execSync(`git -C "${projectPath}" log -n 1 --format="%h"`, { stdio: 'pipe' }).toString().trim();
-				const rawDate = execSync(`git -C "${projectPath}" log -n 1 --format="%ad" --date=short`, { stdio: 'pipe' }).toString().trim();
+				commitHash = getLatestCommitField(projectPath, '%h');
+				const rawDate = getLatestCommitField(projectPath, '%ad', ['--date=short']);
 				if (rawDate) {
 					commitDate = rawDate;
 				}
@@ -154,12 +155,31 @@ ${notesLines}
 			}
 		}
 
+		const savedDiffs: string[] = [];
+		if (task.fileDiffs && typeof task.fileDiffs === 'object') {
+			for (const [relativeFile, diff] of Object.entries(task.fileDiffs)) {
+				if (typeof diff !== 'string' || !diff) continue;
+
+				const diffPath = resolveSafeChildPath(diffsDir, `${relativeFile}.diff`);
+				if (!diffPath) continue;
+
+				const diffSubDir = path.dirname(diffPath);
+				if (!fs.existsSync(diffSubDir)) {
+					fs.mkdirSync(diffSubDir, { recursive: true });
+				}
+
+				fs.writeFileSync(diffPath, diff, 'utf8');
+				savedDiffs.push(relativeFile);
+			}
+		}
+
 		return json({
 			success: true,
 			folderName,
 			filePath,
 			centralDir: targetDir,
-			copiedCount: copiedFiles.length
+			copiedCount: copiedFiles.length,
+			diffCount: savedDiffs.length
 		});
 	} catch (error) {
 		console.error('Save Log Error:', error);

@@ -41,6 +41,11 @@ function countFiles(dir: string): { logs: number; files: number } {
 	return { logs, files };
 }
 
+function stripHeavyTaskFields(task: any) {
+	const { fileDiffs, ...lightTask } = task;
+	return lightTask;
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const { tasks } = await request.json();
@@ -54,7 +59,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			version: '1.0',
 			exportedAt: new Date().toISOString(),
 			settings: { logStoragePath: settings.logStoragePath ?? null },
-			tasks: tasks ?? []
+			tasks: (tasks ?? []).map(stripHeavyTaskFields)
 		};
 		zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
 

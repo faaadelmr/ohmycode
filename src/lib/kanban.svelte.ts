@@ -8,6 +8,8 @@ export interface DutyTask {
 	files: string[];
 	functions: string[];
 	fileDiffs?: Record<string, string>;
+	hasSavedDiffs?: boolean;
+	diffStats?: { additions: number; deletions: number };
 	projectPath?: string;
 	gitCommitHash?: string;
 	createdAt: number;
@@ -15,6 +17,30 @@ export interface DutyTask {
 }
 
 const STORAGE_KEY = 'ohmycode-kanban-tasks';
+
+function summarizeDiffs(fileDiffs?: Record<string, string>) {
+	const stats = { additions: 0, deletions: 0 };
+
+	if (!fileDiffs) return stats;
+
+	for (const diff of Object.values(fileDiffs)) {
+		diff.split('\n').forEach((line) => {
+			if (line.startsWith('+') && !line.startsWith('+++')) stats.additions++;
+			if (line.startsWith('-') && !line.startsWith('---')) stats.deletions++;
+		});
+	}
+
+	return stats;
+}
+
+function stripHeavyFields(task: DutyTask): DutyTask {
+	const { fileDiffs, ...lightTask } = task;
+	return {
+		...lightTask,
+		hasSavedDiffs: lightTask.hasSavedDiffs ?? Boolean(fileDiffs && Object.keys(fileDiffs).length > 0),
+		diffStats: lightTask.diffStats ?? summarizeDiffs(fileDiffs)
+	};
+}
 
 function createKanbanStore() {
 	let tasks = $state<DutyTask[]>([]);
@@ -24,7 +50,9 @@ function createKanbanStore() {
 		const stored = localStorage.getItem(STORAGE_KEY);
 		if (stored) {
 			try {
-				tasks = JSON.parse(stored);
+				const loadedTasks = JSON.parse(stored).map(stripHeavyFields);
+				tasks = loadedTasks;
+				localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedTasks));
 			} catch (e) {
 				console.error('Failed to parse stored tasks', e);
 			}
@@ -33,7 +61,7 @@ function createKanbanStore() {
 
 	function save() {
 		if (browser) {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks.map(stripHeavyFields)));
 		}
 	}
 
@@ -58,7 +86,8 @@ function createKanbanStore() {
 				notes,
 				files,
 				functions,
-				fileDiffs,
+				hasSavedDiffs: Boolean(fileDiffs && Object.keys(fileDiffs).length > 0),
+				diffStats: summarizeDiffs(fileDiffs),
 				projectPath,
 				gitCommitHash,
 				createdAt: Date.now()
@@ -67,13 +96,22 @@ function createKanbanStore() {
 			save();
 			return newTask;
 		},
-		async syncToLocal(task: DutyTask, projectPath: string, includeGitCommit?: boolean) {
+		async syncToLocal(
+			task: DutyTask,
+			projectPath: string,
+			includeGitCommit?: boolean,
+			fileDiffs?: Record<string, string>
+		) {
 			if (!projectPath) return;
 			try {
 				const res = await fetch('/api/log/save', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ task, projectPath, includeGitCommit })
+					body: JSON.stringify({
+						task: { ...task, fileDiffs },
+						projectPath,
+						includeGitCommit
+					})
 				});
 				const data = await res.json();
 				// Store the generated folder name back into the task so
@@ -81,7 +119,11 @@ function createKanbanStore() {
 				if (data.success && data.folderName) {
 					const idx = tasks.findIndex((t) => t.id === task.id);
 					if (idx !== -1) {
-						tasks[idx] = { ...tasks[idx], logFolderName: data.folderName };
+						tasks[idx] = {
+							...tasks[idx],
+							logFolderName: data.folderName,
+							hasSavedDiffs: Boolean(data.diffCount) || tasks[idx].hasSavedDiffs
+						};
 						save();
 					}
 				}

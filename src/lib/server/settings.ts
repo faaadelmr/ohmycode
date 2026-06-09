@@ -6,6 +6,9 @@ const CONFIG_PATH = path.join(os.homedir(), '.ohmycode', 'config.json');
 
 export interface AppSettings {
 	logStoragePath?: string;
+	gitAuthorName?: string;
+	gitAuthorEmail?: string;
+	updateGlobalGitAuthor?: boolean;
 }
 
 export function getSettings(): AppSettings {
