@@ -9,6 +9,7 @@ export interface DutyTask {
 	functions: string[];
 	fileDiffs?: Record<string, string>;
 	projectPath?: string;
+	gitCommitHash?: string;
 	createdAt: number;
 	logFolderName?: string;
 }
@@ -47,7 +48,8 @@ function createKanbanStore() {
 			description?: string,
 			notes?: string,
 			projectPath?: string,
-			fileDiffs?: Record<string, string>
+			fileDiffs?: Record<string, string>,
+			gitCommitHash?: string
 		): DutyTask {
 			const newTask: DutyTask = {
 				id: crypto.randomUUID(),
@@ -58,6 +60,7 @@ function createKanbanStore() {
 				functions,
 				fileDiffs,
 				projectPath,
+				gitCommitHash,
 				createdAt: Date.now()
 			};
 			tasks.unshift(newTask); // Newest first
@@ -88,21 +91,23 @@ function createKanbanStore() {
 		},
 		async deleteFromLocal(task: DutyTask) {
 			try {
-				await fetch('/api/log/delete', {
+				const res = await fetch('/api/log/delete', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ task })
 				});
+				return await res.json();
 			} catch (e) {
 				console.error('Failed to delete from local disk', e);
+				return { success: false, error: 'API Connection failed' };
 			}
 		},
-		async undoGitCommit(projectPath: string) {
+		async undoGitCommit(projectPath: string, commitHash?: string) {
 			try {
 				const res = await fetch('/api/git', {
 					method: 'DELETE',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ projectPath })
+					body: JSON.stringify({ projectPath, commitHash })
 				});
 				return await res.json();
 			} catch (e) {
@@ -114,28 +119,27 @@ function createKanbanStore() {
 			const task = tasks.find((t) => t.id === id);
 			if (!task) return;
 
-			// 1. If Git undo is needed, do it FIRST
-			if (task.projectPath) {
-				const shouldUndoGit = confirm(
-					'Do you also want to UNDO the last Git commit associated with this task?\n\n(This will perform a git reset --soft HEAD~1)'
+			if (task.projectPath && task.gitCommitHash) {
+				const shouldDelete = confirm(
+					'Delete this log history?\n\nThis will undo the Git commit created for this log and remove the saved log folder.'
 				);
+				if (!shouldDelete) return;
 
-				if (shouldUndoGit) {
-					const res = await this.undoGitCommit(task.projectPath);
-					if (!res.success) {
-						const proceed = confirm(
-							`Git Undo Failed: ${res.error}\n\nDo you still want to delete the log entry anyway?`
-						);
-						if (!proceed) return; // User cancelled the whole deletion
-					}
+				const undoResult = await this.undoGitCommit(task.projectPath, task.gitCommitHash);
+				if (!undoResult.success) {
+					alert(`Git undo failed: ${undoResult.error || undoResult.raw || 'Unknown error'}`);
+					return;
 				}
 			} else {
-				// Standard confirmation for non-project tasks
-				if (!confirm('Are you sure you want to delete this duty?')) return;
+				if (!confirm('Delete this log history and remove the saved log folder?')) return;
 			}
 
-			// 2. ONLY if step 1 succeeded or was skipped, proceed to delete from disk and state
-			await this.deleteFromLocal(task);
+			const deleteResult = await this.deleteFromLocal(task);
+			if (!deleteResult.success) {
+				alert(`Log delete failed: ${deleteResult.error || 'Unknown error'}`);
+				return;
+			}
+
 			const index = tasks.indexOf(task);
 			tasks.splice(index, 1);
 			save();

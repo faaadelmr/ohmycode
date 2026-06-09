@@ -45,6 +45,19 @@ function buildFolderName(projectLogsDir: string, title: string): string {
 	return `${paddedNum}. ${safeTitle}`;
 }
 
+function readGitConfigValue(projectPath: string, key: string) {
+	const commands = [`git config --global --get ${key}`, `git -C "${projectPath}" config --get ${key}`];
+
+	for (const command of commands) {
+		try {
+			const value = execSync(command, { stdio: 'pipe' }).toString().trim();
+			if (value) return value;
+		} catch (e) {}
+	}
+
+	return '';
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const { task, projectPath, includeGitCommit } = await request.json();
@@ -81,10 +94,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			} catch (e) {}
 
 			try {
-				authorName = execSync(`git -C "${projectPath}" config user.name`, { stdio: 'pipe' }).toString().trim();
-				if (!authorName) {
-					authorName = execSync(`git -C "${projectPath}" log -n 1 --format="%an"`, { stdio: 'pipe' }).toString().trim();
-				}
+				authorName = readGitConfigValue(projectPath, 'user.name') || 'N/A';
 			} catch (e) {}
 
 			try {

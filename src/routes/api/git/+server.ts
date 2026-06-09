@@ -5,8 +5,24 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 
+function readGitConfigValue(projectPath: string, key: string) {
+	const commands = [`git config --global --get ${key}`, `git -C "${projectPath}" config --get ${key}`];
+
+	for (const command of commands) {
+		try {
+			const value = execSync(command, { stdio: 'pipe' }).toString().trim();
+			if (value) return value;
+		} catch (e) {}
+	}
+
+	return '';
+}
+
 export const GET: RequestHandler = async ({ url }) => {
 	const targetPath = url.searchParams.get('path') || process.cwd();
+	const requestedFile = url.searchParams.get('file');
+	const requestedStaged = url.searchParams.get('staged') === 'true';
+	const includeDiff = url.searchParams.get('diff') === '1' || Boolean(requestedFile);
 
 	if (!fs.existsSync(targetPath)) {
 		return json({ success: false, error: 'Directory does not exist' }, { status: 400 });
@@ -113,6 +129,15 @@ export const GET: RequestHandler = async ({ url }) => {
 			let diffStats = { additions: 0, deletions: 0 };
 
 			const fullPath = path.resolve(targetPath, change.file);
+
+			if (!includeDiff) {
+				return {
+					...change,
+					functions,
+					diff: diffData,
+					stats: diffStats
+				};
+			}
 
 			if (change.type !== 'Deleted') {
 				try {
@@ -223,6 +248,23 @@ export const GET: RequestHandler = async ({ url }) => {
 			};
 		};
 
+		if (requestedFile) {
+			const sourceList = requestedStaged ? stagedFiles : unstagedFiles;
+			const change =
+				sourceList.find((item) => item.file === requestedFile) || {
+					file: requestedFile,
+					status: requestedStaged ? 'M' : 'M',
+					type: 'Modified',
+					isStaged: requestedStaged
+				};
+
+			return json({
+				success: true,
+				path: targetPath,
+				change: processSuggestion(change)
+			});
+		}
+
 		const suggestions = unstagedFiles.map(processSuggestion);
 		const stagedChanges = stagedFiles.map(processSuggestion);
 
@@ -297,9 +339,17 @@ export const POST: RequestHandler = async ({ request }) => {
 			execSync(stageCmd);
 		} else {
 			const status = execSync(`git -C "${projectPath}" status --porcelain`).toString();
-			const hasStaged = /^[MADR]/.test(status);
+			const hasStaged = status
+				.split('\n')
+				.some((line) => line.length > 0 && line[0] !== ' ' && line[0] !== '?');
 			if (!hasStaged) {
-				execSync(`git -C "${projectPath}" add .`);
+				return json(
+					{
+						success: false,
+						error: 'No staged changes to commit. Select files or stage changes first.'
+					},
+					{ status: 400 }
+				);
 			}
 		}
 
@@ -308,13 +358,26 @@ export const POST: RequestHandler = async ({ request }) => {
 		
 		const filesArgs =
 			files && files.length > 0 ? `-- ${files.map((f: string) => `"${f}"`).join(' ')}` : '';
+		const authorName = readGitConfigValue(projectPath, 'user.name');
+		const authorEmail = readGitConfigValue(projectPath, 'user.email');
+		const commitEnv = {
+			...process.env,
+			...(authorName
+				? { GIT_AUTHOR_NAME: authorName, GIT_COMMITTER_NAME: authorName }
+				: {}),
+			...(authorEmail
+				? { GIT_AUTHOR_EMAIL: authorEmail, GIT_COMMITTER_EMAIL: authorEmail }
+				: {})
+		};
 
 		try {
 			const commitOutput = execSync(
-				`git -C "${projectPath}" commit --allow-empty --no-verify -F "${tempMsgFile}" ${filesArgs}`
+				`git -C "${projectPath}" commit --no-verify -F "${tempMsgFile}" ${filesArgs}`,
+				{ env: commitEnv }
 			).toString();
+			const commitHash = execSync(`git -C "${projectPath}" rev-parse --short HEAD`).toString().trim();
 			fs.unlinkSync(tempMsgFile);
-			return json({ success: true, output: commitOutput });
+			return json({ success: true, output: commitOutput, commitHash });
 		} catch (commitErr: any) {
 			if (fs.existsSync(tempMsgFile)) fs.unlinkSync(tempMsgFile);
 			return json(
@@ -334,10 +397,24 @@ export const POST: RequestHandler = async ({ request }) => {
 
 export const DELETE: RequestHandler = async ({ request }) => {
 	try {
-		const { projectPath } = await request.json();
+		const { projectPath, commitHash } = await request.json();
 
 		if (!projectPath || !fs.existsSync(projectPath)) {
 			return json({ success: false, error: 'Valid project path is required' }, { status: 400 });
+		}
+
+		if (commitHash) {
+			const headHash = execSync(`git -C "${projectPath}" rev-parse --short HEAD`).toString().trim();
+			const fullHeadHash = execSync(`git -C "${projectPath}" rev-parse HEAD`).toString().trim();
+			if (headHash !== commitHash && fullHeadHash !== commitHash) {
+				return json(
+					{
+						success: false,
+						error: 'Cannot undo this log commit because it is no longer the latest commit.'
+					},
+					{ status: 400 }
+				);
+			}
 		}
 
 		const undoCmd = `git -C "${projectPath}" reset --soft HEAD~1`;

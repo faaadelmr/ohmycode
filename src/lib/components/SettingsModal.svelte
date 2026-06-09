@@ -18,7 +18,7 @@
 	// ─── Import State ──────────────────────────────────────────────────
 	let importFile = $state<File | null>(null);
 	let isImporting = $state(false);
-	let importFileInput: HTMLInputElement;
+	let importFileInput = $state<HTMLInputElement>();
 
 	// ─── Folder Picker State ───────────────────────────────────────────
 	let showPicker = $state(false);
