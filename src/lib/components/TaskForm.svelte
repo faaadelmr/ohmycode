@@ -4,6 +4,7 @@
 	import { fade, slide, fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import { theme, themes } from '$lib/theme';
+	import { setUiStyle, uiStyle, uiStyles, type UiStyleId } from '$lib/ui-style';
 	import CommitForm from './CommitForm.svelte';
 	import SettingsModal from './SettingsModal.svelte';
 	import StatusBar from './StatusBar.svelte';
@@ -1659,6 +1660,23 @@
 											>
 												{#each themes as t}
 													<option value={t} selected={$theme === t} class="capitalize font-bold">{t}</option>
+												{/each}
+											</select>
+										</div>
+
+										<div class="form-control w-full">
+											<label class="label pt-0 pb-1" for="sidebar-ui-style-select">
+												<span class="label-text text-[10px] uppercase font-black opacity-55 tracking-widest">UI Style Preset</span>
+											</label>
+											<select
+												id="sidebar-ui-style-select"
+												class="select select-sm select-bordered w-full rounded-lg font-bold text-xs bg-base-100"
+												value={$uiStyle}
+												onchange={(e) =>
+													setUiStyle((e.currentTarget as HTMLSelectElement).value as UiStyleId)}
+											>
+												{#each uiStyles as style}
+													<option value={style.id} selected={$uiStyle === style.id}>{style.label}</option>
 												{/each}
 											</select>
 										</div>

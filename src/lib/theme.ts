@@ -21,6 +21,7 @@ export const themes = [
 	'synthwave',
 	'retro',
 	'cyberpunk',
+	'neo-brutalism',
 	'valentine',
 	'halloween',
 	'garden',

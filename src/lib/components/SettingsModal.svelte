@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fade, fly } from 'svelte/transition';
 	import { onMount } from 'svelte';
+	import { setUiStyle, uiStyle, uiStyles } from '$lib/ui-style';
 
 	let { open = $bindable(false) } = $props();
 
@@ -365,7 +366,36 @@
 
 				<div class="divider my-0 opacity-30"></div>
 
-				<!-- ── Section 2: Git Author ── -->
+				<section>
+					<div class="flex items-center gap-2 mb-4">
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M12 3v18"></path><path d="M3 12h18"></path><path d="M5 5l14 14"></path><path d="M19 5L5 19"></path></svg>
+						<span class="text-[10px] font-black uppercase tracking-widest opacity-60">UI Style Preset</span>
+					</div>
+
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+						{#each uiStyles as style}
+							<button
+								type="button"
+								class="text-left p-3 rounded-xl border transition-all bg-base-200/40 hover:bg-primary/10 hover:border-primary/25 {$uiStyle === style.id ? 'border-primary bg-primary/10 text-primary shadow-sm' : 'border-base-300'}"
+								onclick={() => setUiStyle(style.id)}
+							>
+								<div class="flex items-center justify-between gap-2">
+									<span class="text-xs font-black uppercase tracking-wide">{style.label}</span>
+									<span class="flex gap-1">
+										<span class="w-3 h-3 rounded-sm bg-primary"></span>
+										<span class="w-3 h-3 rounded-sm bg-secondary"></span>
+										<span class="w-3 h-3 rounded-sm bg-accent"></span>
+									</span>
+								</div>
+								<p class="text-[10px] opacity-55 mt-1 leading-snug">{style.description}</p>
+							</button>
+						{/each}
+					</div>
+				</section>
+
+				<div class="divider my-0 opacity-30"></div>
+
+				<!-- ── Section 3: Git Author ── -->
 				<section>
 					<div class="flex items-center gap-2 mb-4">
 						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M16 18l6-6-6-6"></path><path d="M8 6l-6 6 6 6"></path></svg>
