@@ -29,33 +29,47 @@ process.env.PORT = port;
 console.log(`\x1b[35m%s\x1b[0m`, `🌼 ohmycode starting on http://localhost:${port}...`);
 
 const server = spawn('node', [serverPath], {
-	stdio: 'inherit',
+	detached: true,
+	stdio: 'ignore',
 	env: process.env
+});
+
+server.unref();
+
+let childExited = false;
+let exitCode = 0;
+
+server.on('exit', (code) => {
+	childExited = true;
+	exitCode = code;
+});
+
+server.on('error', (err) => {
+	childExited = true;
+	console.error('Failed to start server:', err);
+	process.exit(1);
 });
 
 // Wait a bit for server to start, then open browser
 setTimeout(() => {
+	if (childExited) {
+		console.error(
+			`Error: Server exited unexpectedly with code ${exitCode}. (Is the port ${port} already in use?)`
+		);
+		process.exit(1);
+	}
+
 	const url = `http://localhost:${port}`;
 	const start =
 		process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-	
+
 	try {
 		exec(`${start} ${url}`);
-	} catch (e) {
+	} catch {
 		console.log(`Could not open browser automatically. Please go to ${url}`);
 	}
+
+	console.log(`\x1b[32m%s\x1b[0m`, `🌼 ohmycode is running in the background on ${url}.`);
+	console.log(`You can close this terminal window.`);
+	process.exit(0);
 }, 2000);
-
-server.on('close', (code) => {
-	process.exit(code);
-});
-
-// Handle termination
-process.on('SIGINT', () => {
-	server.kill();
-	process.exit();
-});
-process.on('SIGTERM', () => {
-	server.kill();
-	process.exit();
-});

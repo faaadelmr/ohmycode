@@ -1,7 +1,7 @@
 {
 	"name": "ohmycode",
 	"private": false,
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "Modern, playful, and colorful interactive Kanban for developers",
 	"type": "module",
 	"files": [
