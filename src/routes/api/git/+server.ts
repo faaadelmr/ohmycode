@@ -5,6 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import {
 	commit,
+	getCurrentBranch,
 	getDiff,
 	getFullHead,
 	getRecentCommitLines,
@@ -39,17 +40,17 @@ export const GET: RequestHandler = async ({ url }) => {
 		// Column 1: Index status (Staged)
 		// Column 2: Working Tree status (Unstaged)
 		const statusOutput = getStatusPorcelain(targetPath);
-		
-		const lines = statusOutput.split('\n').filter(line => line.trim() !== '');
-		
+
+		const lines = statusOutput.split('\n').filter((line) => line.trim() !== '');
+
 		const stagedFiles: any[] = [];
 		const unstagedFiles: any[] = [];
 
-		lines.forEach(line => {
+		lines.forEach((line) => {
 			const x = line[0]; // Staged
 			const y = line[1]; // Unstaged
 			const filePath = line.slice(3).replace(/"/g, '').trim();
-			
+
 			// Common helper to parse type
 			const getType = (code: string) => {
 				if (code === 'A' || code === '?') return 'Added';
@@ -80,7 +81,11 @@ export const GET: RequestHandler = async ({ url }) => {
 			}
 		});
 
-		const getDirectoryDiff = (dirPath: string, relativeRoot: string, depth = 0): { diff: string; additions: number } => {
+		const getDirectoryDiff = (
+			dirPath: string,
+			relativeRoot: string,
+			depth = 0
+		): { diff: string; additions: number } => {
 			let diff = '';
 			let additions = 0;
 
@@ -91,13 +96,26 @@ export const GET: RequestHandler = async ({ url }) => {
 				const items = fs.readdirSync(dirPath);
 				for (const item of items) {
 					// Ignore common massive build artifacts and dependency folders
-					if ([
-						'.git', 'node_modules', '.svelte-kit', 'dist', 'build', 
-						'.vscode', 'out', 'target', 'vendor', '.gradle', '.idea', 'bin', 'obj'
-					].includes(item)) {
+					if (
+						[
+							'.git',
+							'node_modules',
+							'.svelte-kit',
+							'dist',
+							'build',
+							'.vscode',
+							'out',
+							'target',
+							'vendor',
+							'.gradle',
+							'.idea',
+							'bin',
+							'obj'
+						].includes(item)
+					) {
 						continue;
 					}
-					
+
 					const fullPath = path.join(dirPath, item);
 					const relPath = path.join(relativeRoot, item);
 					const stat = fs.lstatSync(fullPath);
@@ -146,11 +164,13 @@ export const GET: RequestHandler = async ({ url }) => {
 						try {
 							const stats = fs.statSync(fullPath);
 							return stats.isFile() && stats.size > 250 * 1024; // > 250KB is considered huge for active diff parsing
-						} catch { return false; }
+						} catch {
+							return false;
+						}
 					})();
 
 					if (isHugeFile) {
-						diffData = "File diff skipped (File too large)";
+						diffData = 'File diff skipped (File too large)';
 						return {
 							...change,
 							functions: [],
@@ -174,7 +194,10 @@ export const GET: RequestHandler = async ({ url }) => {
 								const content = fs.readFileSync(fullPath, 'utf8');
 								const dLines = content.split('\n');
 								// Only include the first 1000 lines of massive new files to avoid bloating client DOMs
-								diffData = dLines.slice(0, 1000).map((l) => `+${l}`).join('\n');
+								diffData = dLines
+									.slice(0, 1000)
+									.map((l) => `+${l}`)
+									.join('\n');
 								if (dLines.length > 1000) {
 									diffData += '\n... [Diff truncated to 1000 lines] ...\n';
 								}
@@ -246,13 +269,12 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		if (requestedFile) {
 			const sourceList = requestedStaged ? stagedFiles : unstagedFiles;
-			const change =
-				sourceList.find((item) => item.file === requestedFile) || {
-					file: requestedFile,
-					status: requestedStaged ? 'M' : 'M',
-					type: 'Modified',
-					isStaged: requestedStaged
-				};
+			const change = sourceList.find((item) => item.file === requestedFile) || {
+				file: requestedFile,
+				status: requestedStaged ? 'M' : 'M',
+				type: 'Modified',
+				isStaged: requestedStaged
+			};
 
 			return json({
 				success: true,
@@ -269,9 +291,15 @@ export const GET: RequestHandler = async ({ url }) => {
 			recentCommits = getRecentCommitLines(targetPath, 3);
 		} catch (e) {}
 
+		let activeBranch = 'main';
+		try {
+			activeBranch = getCurrentBranch(targetPath);
+		} catch (e) {}
+
 		return json({
 			success: true,
 			path: targetPath,
+			branch: activeBranch,
 			suggestions,
 			stagedChanges,
 			recentCommits
@@ -359,19 +387,17 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		const tempMsgFile = path.join(os.tmpdir(), `ohmycode_commit_${Date.now()}.txt`);
 		fs.writeFileSync(tempMsgFile, message, 'utf8');
-		
+
 		const commitFiles = files && files.length > 0 ? files : [];
 		const settings = getSettings();
-		const authorName = settings.gitAuthorName?.trim() || readGitConfigValue(projectPath, 'user.name');
-		const authorEmail = settings.gitAuthorEmail?.trim() || readGitConfigValue(projectPath, 'user.email');
+		const authorName =
+			settings.gitAuthorName?.trim() || readGitConfigValue(projectPath, 'user.name');
+		const authorEmail =
+			settings.gitAuthorEmail?.trim() || readGitConfigValue(projectPath, 'user.email');
 		const commitEnv = {
 			...process.env,
-			...(authorName
-				? { GIT_AUTHOR_NAME: authorName, GIT_COMMITTER_NAME: authorName }
-				: {}),
-			...(authorEmail
-				? { GIT_AUTHOR_EMAIL: authorEmail, GIT_COMMITTER_EMAIL: authorEmail }
-				: {})
+			...(authorName ? { GIT_AUTHOR_NAME: authorName, GIT_COMMITTER_NAME: authorName } : {}),
+			...(authorEmail ? { GIT_AUTHOR_EMAIL: authorEmail, GIT_COMMITTER_EMAIL: authorEmail } : {})
 		};
 
 		try {
@@ -422,11 +448,14 @@ export const DELETE: RequestHandler = async ({ request }) => {
 			const output = runGit(projectPath, ['reset', '--soft', 'HEAD~1']);
 			return json({ success: true, output });
 		} catch (err: any) {
-			return json({
-				success: false,
-				error: 'Failed to undo commit.',
-				raw: err.stdout?.toString() || err.message
-			}, { status: 400 });
+			return json(
+				{
+					success: false,
+					error: 'Failed to undo commit.',
+					raw: err.stdout?.toString() || err.message
+				},
+				{ status: 400 }
+			);
 		}
 	} catch (error) {
 		return json({ success: false, error: (error as Error).message }, { status: 500 });
