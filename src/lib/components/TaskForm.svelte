@@ -144,7 +144,7 @@
 	);
 
 	// ── VS Code IDE States ────────────────────────────────────────────────
-	let activeSidebar = $state<'source-control' | 'history' | 'explorer' | 'settings'>(
+	let activeSidebar = $state<'source-control' | 'history' | 'explorer' | 'settings' | 'compare'>(
 		'source-control'
 	);
 	let isSidebarCollapsed = $state(false);
@@ -152,13 +152,25 @@
 	let diffViewType = $state<'split' | 'inline'>('split');
 	let sidebarSearchQuery = $state('');
 
+	type ManualComparison = {
+		id: string;
+		title: string;
+		beforeCode: string;
+		afterCode: string;
+		viewMode: 'edit' | 'diff';
+		layout: 'split' | 'inline';
+	};
+
+	let manualComparisons = $state<ManualComparison[]>([]);
+
 	type Tab = {
 		id: string;
-		type: 'welcome' | 'diff' | 'log';
+		type: 'welcome' | 'diff' | 'log' | 'manual-compare';
 		title: string;
 		file?: GitChangeItem;
 		isStaged?: boolean;
 		task?: any;
+		comparisonId?: string;
 	};
 
 	let openTabs = $state<Tab[]>([{ id: 'welcome', type: 'welcome', title: 'Welcome' }]);
@@ -185,6 +197,87 @@
 				activeTabId = 'welcome';
 			}
 		}
+	};
+
+	const diffManualLines = (oldStr: string, newStr: string) => {
+		const oldLines = oldStr.split('\n');
+		const newLines = newStr.split('\n');
+		const matrix: number[][] = Array(oldLines.length + 1)
+			.fill(null)
+			.map(() => Array(newLines.length + 1).fill(0));
+
+		for (let i = 1; i <= oldLines.length; i++) {
+			for (let j = 1; j <= newLines.length; j++) {
+				if (oldLines[i - 1] === newLines[j - 1]) {
+					matrix[i][j] = matrix[i - 1][j - 1] + 1;
+				} else {
+					matrix[i][j] = Math.max(matrix[i - 1][j], matrix[i][j - 1]);
+				}
+			}
+		}
+
+		const rows: any[] = [];
+		let i = oldLines.length;
+		let j = newLines.length;
+
+		while (i > 0 || j > 0) {
+			if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+				rows.unshift({
+					kind: 'context',
+					oldNumber: i,
+					newNumber: j,
+					content: oldLines[i - 1],
+					key: `ctx-${i}-${j}`
+				});
+				i--;
+				j--;
+			} else if (j > 0 && (i === 0 || matrix[i][j - 1] >= matrix[i - 1][j])) {
+				rows.unshift({
+					kind: 'add',
+					oldNumber: null,
+					newNumber: j,
+					content: newLines[j - 1],
+					key: `add-${j}`
+				});
+				j--;
+			} else {
+				rows.unshift({
+					kind: 'remove',
+					oldNumber: i,
+					newNumber: null,
+					content: oldLines[i - 1],
+					key: `rem-${i}`
+				});
+				i--;
+			}
+		}
+		return rows;
+	};
+
+	const createManualComparison = () => {
+		const id = `compare-${Date.now()}`;
+		const index = manualComparisons.length + 1;
+		const newItem: ManualComparison = {
+			id,
+			title: `Comparison ${index}`,
+			beforeCode: '',
+			afterCode: '',
+			viewMode: 'edit',
+			layout: 'split'
+		};
+		manualComparisons.push(newItem);
+		openTab({
+			id: `manual-compare-${id}`,
+			type: 'manual-compare',
+			title: newItem.title,
+			comparisonId: id
+		});
+	};
+
+	const deleteManualComparison = (e: MouseEvent, id: string) => {
+		e.stopPropagation();
+		manualComparisons = manualComparisons.filter((c) => c.id !== id);
+		closeTab(e, `manual-compare-${id}`);
 	};
 
 	const loadChangeDiff = async (item: GitChangeItem, isStaged: boolean) => {
@@ -386,7 +479,20 @@
 		syncWithGit();
 	};
 
+	$effect(() => {
+		localStorage.setItem('ohmycode-manual-comparisons', JSON.stringify(manualComparisons));
+	});
+
 	onMount(() => {
+		const storedComparisons = localStorage.getItem('ohmycode-manual-comparisons');
+		if (storedComparisons) {
+			try {
+				manualComparisons = JSON.parse(storedComparisons);
+			} catch (e) {
+				console.error('Failed to parse manual comparisons', e);
+			}
+		}
+
 		const storedProjects = localStorage.getItem('ohmycode-recent-projects');
 		if (storedProjects) {
 			try {
@@ -1577,6 +1683,40 @@
 					>
 				</button>
 
+				<!-- Manual Code Comparator Icon -->
+				<button
+					onclick={() => {
+						activeSidebar = 'compare';
+						isSidebarCollapsed = false;
+					}}
+					class="group relative rounded-lg p-2.5 text-base-content/50 transition-colors hover:text-base-content {activeSidebar ===
+						'compare' && !isSidebarCollapsed
+						? 'bg-base-content/5 text-primary'
+						: ''}"
+					title="Manual Code Comparator"
+				>
+					<div
+						class="absolute top-1/2 left-0 h-6 w-[3px] -translate-y-1/2 scale-y-0 rounded-r bg-primary transition-all group-hover:scale-y-75 {activeSidebar ===
+							'compare' && !isSidebarCollapsed
+							? 'scale-y-100'
+							: ''}"
+					></div>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+						<line x1="12" y1="3" x2="12" y2="17" />
+						<line x1="12" y1="21" x2="12" y2="21" />
+						<path d="M7 21h10" />
+					</svg>
+				</button>
+
 				<!-- Direct Preferences View -->
 				<button
 					onclick={() => {
@@ -2211,6 +2351,111 @@
 								</div>
 							{/if}
 						</div>
+					{:else if activeSidebar === 'compare'}
+						<div class="flex flex-col gap-4 p-4">
+							<div
+								class="flex flex-col gap-1 rounded-xl border border-base-content/10 bg-base-100 p-3.5 shadow-inner"
+							>
+								<span class="text-[9px] font-black tracking-widest uppercase opacity-45"
+									>Manual Code Comparator</span
+								>
+								<span class="text-[10px] font-medium opacity-80"
+									>Compare code changes side-by-side or inline manually.</span
+								>
+							</div>
+
+							<button
+								onclick={createManualComparison}
+								class="btn w-full gap-1.5 rounded-lg text-xs font-bold tracking-wider uppercase btn-sm btn-primary"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="13"
+									height="13"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+								>
+									<line x1="12" y1="5" x2="12" y2="19"></line>
+									<line x1="5" y1="12" x2="19" y2="12"></line>
+								</svg>
+								New Comparison
+							</button>
+
+							<div class="mt-4 flex flex-col">
+								<h4
+									class="mb-2 border-b border-base-content/5 pb-1 text-[10px] font-bold tracking-widest uppercase opacity-55 select-none"
+								>
+									Comparisons List
+								</h4>
+								{#if manualComparisons.length > 0}
+									<div
+										class="vscode-scrollbar flex max-h-[50vh] flex-col gap-1.5 overflow-y-auto pr-0.5"
+									>
+										{#each manualComparisons as comp}
+											<div
+												role="button"
+												tabindex="0"
+												onclick={() =>
+													openTab({
+														id: `manual-compare-${comp.id}`,
+														type: 'manual-compare',
+														title: comp.title,
+														comparisonId: comp.id
+													})}
+												onkeydown={(e) =>
+													e.key === 'Enter' &&
+													openTab({
+														id: `manual-compare-${comp.id}`,
+														type: 'manual-compare',
+														title: comp.title,
+														comparisonId: comp.id
+													})}
+												class="rounded-xl border bg-base-100 p-2.5 text-left hover:bg-base-300 {activeTabId ===
+												`manual-compare-${comp.id}`
+													? 'border-primary/35 bg-primary/5 text-primary'
+													: 'border-base-content/10'} group flex cursor-pointer items-center justify-between gap-1 font-mono text-[10px] opacity-85 transition-all hover:border-primary/20"
+											>
+												<div
+													class="flex items-center gap-1.5 truncate font-sans text-[11px] font-bold text-base-content transition-colors group-hover:text-primary"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														width="11"
+														height="11"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2.5"
+														class={activeTabId === `manual-compare-${comp.id}`
+															? 'text-primary'
+															: 'text-secondary'}
+													>
+														<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+														<line x1="12" y1="3" x2="12" y2="17" />
+													</svg>
+													<span>{comp.title}</span>
+												</div>
+												<button
+													onclick={(e) => deleteManualComparison(e, comp.id)}
+													class="btn btn-square btn-ghost btn-xs text-error/60 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-error/10 hover:text-error"
+													title="Delete this comparison"
+												>
+													✕
+												</button>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<div
+										class="rounded-xl border border-dashed border-base-content/10 py-6 text-center text-[10px] font-medium opacity-35 select-none"
+									>
+										No comparisons created yet.
+									</div>
+								{/if}
+							</div>
+						</div>
 					{/if}
 				</div>
 			</section>
@@ -2283,6 +2528,20 @@
 										d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
 									></path></svg
 								>
+							{:else if tab.type === 'manual-compare'}
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+									class="shrink-0 text-primary"
+								>
+									<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+									<line x1="12" y1="3" x2="12" y2="17" />
+								</svg>
 							{:else}
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
@@ -3165,6 +3424,254 @@
 								{/if}
 							</div>
 						</div>
+					{/if}
+				{:else if activeTabId.startsWith('manual-compare-')}
+					{@const tab = openTabs.find((t) => t.id === activeTabId)}
+					{#if tab && tab.comparisonId}
+						{@const compIndex = manualComparisons.findIndex((c) => c.id === tab.comparisonId)}
+						{#if compIndex !== -1}
+							{@const comp = manualComparisons[compIndex]}
+							<div
+								class="flex h-full flex-1 flex-col overflow-hidden bg-base-100 text-base-content select-text"
+							>
+								<!-- Toolbar -->
+								<div
+									class="flex h-9 shrink-0 items-center justify-between border-b border-base-content/10 bg-base-200 px-4 text-xs select-none"
+								>
+									<div class="flex items-center gap-3">
+										<input
+											type="text"
+											bind:value={manualComparisons[compIndex].title}
+											class="input input-xs bg-base-100 border border-base-content/10 text-xs font-bold w-48 rounded"
+											placeholder="Comparison Name"
+										/>
+									</div>
+									<div class="flex items-center gap-2">
+										<div class="flex items-center rounded-lg bg-base-content/5 px-2 py-0.5 mr-2">
+											<span class="mr-2 text-[10px] font-bold uppercase opacity-60">Mode</span>
+											<button
+												onclick={() => (manualComparisons[compIndex].viewMode = 'edit')}
+												class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.viewMode ===
+												'edit'
+													? 'btn-primary'
+													: 'btn-ghost'}"
+											>
+												Edit Code
+											</button>
+											<button
+												onclick={() => (manualComparisons[compIndex].viewMode = 'diff')}
+												class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.viewMode ===
+												'diff'
+													? 'btn-primary'
+													: 'btn-ghost'}"
+											>
+												Diff View
+											</button>
+										</div>
+
+										{#if comp.viewMode === 'diff'}
+											<div class="flex items-center rounded-lg bg-base-content/5 px-2 py-0.5">
+												<span class="mr-2 text-[10px] font-bold uppercase opacity-60">Layout</span>
+												<button
+													onclick={() => (manualComparisons[compIndex].layout = 'split')}
+													class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.layout ===
+													'split'
+														? 'btn-primary'
+														: 'btn-ghost'}"
+												>
+													Split
+												</button>
+												<button
+													onclick={() => (manualComparisons[compIndex].layout = 'inline')}
+													class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.layout ===
+													'inline'
+														? 'btn-primary'
+														: 'btn-ghost'}"
+												>
+													Inline
+												</button>
+											</div>
+										{/if}
+									</div>
+								</div>
+
+								<!-- Workspace editor area -->
+								<div class="flex-1 overflow-hidden relative">
+									{#if comp.viewMode === 'edit'}
+										<!-- Side by side textareas -->
+										<div class="grid grid-cols-2 h-full divide-x divide-base-content/10 bg-black/95">
+											<div class="flex flex-col h-full p-4">
+												<div
+													class="mb-2 text-[10px] font-bold tracking-widest text-[#5c6370] uppercase font-mono"
+												>
+													BEFORE (ORIGINAL)
+												</div>
+												<textarea
+													bind:value={manualComparisons[compIndex].beforeCode}
+													class="w-full flex-1 bg-transparent text-[#f8f8f2] font-mono text-[11px] leading-relaxed resize-none focus:outline-none custom-scrollbar p-2 border border-white/5 rounded"
+													placeholder="Paste or type original code here..."
+													spellcheck="false"
+												></textarea>
+											</div>
+											<div class="flex flex-col h-full p-4">
+												<div
+													class="mb-2 text-[10px] font-bold tracking-widest text-[#5c6370] uppercase font-mono"
+												>
+													AFTER (MODIFIED)
+												</div>
+												<textarea
+													bind:value={manualComparisons[compIndex].afterCode}
+													class="w-full flex-1 bg-transparent text-[#f8f8f2] font-mono text-[11px] leading-relaxed resize-none focus:outline-none custom-scrollbar p-2 border border-white/5 rounded"
+													placeholder="Paste or type modified code here..."
+													spellcheck="false"
+												></textarea>
+											</div>
+										</div>
+									{:else}
+										<!-- Render dynamic diff generated from beforeCode and afterCode -->
+										{@const diffRows = diffManualLines(comp.beforeCode, comp.afterCode)}
+										<div
+											class="vscode-scrollbar h-full overflow-y-auto bg-black/95 text-[#f8f8f2] p-2"
+										>
+											{#if comp.layout === 'split'}
+												<div
+													class="flex min-h-full flex-col font-mono text-[11px] leading-relaxed select-text"
+												>
+													{#each diffRows as row (row.key)}
+														<div
+															class="grid min-h-[19px] grid-cols-2 border-b border-white/5 align-middle transition-colors hover:bg-white/5"
+														>
+															{#if row.kind === 'remove'}
+																<div
+																	class="flex h-full items-center border-r border-white/10 bg-[#3a1d1d] px-2 text-[#ff8080]"
+																>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																		>{row.oldNumber}</span
+																	>
+																	<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
+																	<span class="w-full truncate whitespace-pre"
+																		>{row.content}</span
+																	>
+																</div>
+																<div
+																	class="border-r border-white/10 bg-[#1e1e1e] opacity-30 select-none"
+																	style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"
+																></div>
+															{:else if row.kind === 'add'}
+																<div
+																	class="border-r border-white/10 bg-[#1e1e1e] opacity-30 select-none"
+																	style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"
+																></div>
+																<div
+																	class="flex h-full items-center bg-[#1b2f1c] px-2 text-[#80ff80]"
+																>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																		>{row.newNumber}</span
+																	>
+																	<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
+																	<span class="w-full truncate whitespace-pre"
+																		>{row.content}</span
+																	>
+																</div>
+															{:else}
+																<!-- Context -->
+																<div
+																	class="flex h-full items-center border-r border-white/10 bg-transparent px-2 opacity-65"
+																>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																		>{row.oldNumber}</span
+																	>
+																	<span class="w-3 shrink-0 select-none"></span>
+																	<span class="w-full truncate whitespace-pre"
+																		>{row.content}</span
+																	>
+																</div>
+																<div
+																	class="flex h-full items-center border-r border-white/10 bg-transparent px-2 opacity-65"
+																>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																		>{row.newNumber}</span
+																	>
+																	<span class="w-3 shrink-0 select-none"></span>
+																	<span class="w-full truncate whitespace-pre"
+																		>{row.content}</span
+																	>
+																</div>
+															{/if}
+														</div>
+													{:else}
+														<div class="p-8 text-center text-xs opacity-40 italic">
+															No differences found. Code is identical.
+														</div>
+													{/each}
+												</div>
+											{:else}
+												<!-- Inline layout -->
+												<div
+													class="flex min-h-full flex-col font-mono text-[11px] leading-relaxed select-text"
+												>
+													{#each diffRows as row (row.key)}
+														<div
+															class="flex min-h-[19px] border-b border-white/5 px-2 align-middle transition-colors hover:bg-white/5"
+														>
+															{#if row.kind === 'remove'}
+																<div
+																	class="flex w-full items-center bg-[#3a1d1d] py-0.5 text-[#ff8080]"
+																>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																		>{row.oldNumber}</span
+																	>
+																	<span class="w-9 shrink-0"></span>
+																	<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
+																	<span class="truncate whitespace-pre">{row.content}</span>
+																</div>
+															{:else if row.kind === 'add'}
+																<div
+																	class="flex w-full items-center bg-[#1b2f1c] py-0.5 text-[#80ff80]"
+																>
+																	<span class="w-9 shrink-0"></span>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																		>{row.newNumber}</span
+																	>
+																	<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
+																	<span class="truncate whitespace-pre">{row.content}</span>
+																</div>
+															{:else}
+																<!-- Context -->
+																<div
+																	class="flex w-full items-center bg-transparent py-0.5 opacity-65"
+																>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																		>{row.oldNumber}</span
+																	>
+																	<span
+																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																		>{row.newNumber}</span
+																	>
+																	<span class="w-3 shrink-0"></span>
+																	<span class="truncate whitespace-pre">{row.content}</span>
+																</div>
+															{/if}
+														</div>
+													{:else}
+														<div class="p-8 text-center text-xs opacity-40 italic">
+															No differences found. Code is identical.
+														</div>
+													{/each}
+												</div>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/if}
 					{/if}
 				{:else}
 					<!-- TAB VIEW: SPECIFIC LOG DETAIL AUDIT -->
