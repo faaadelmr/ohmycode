@@ -23,10 +23,6 @@
 	let isSyncing = $state(false);
 	let isPicking = $state(false);
 	let isCommitting = $state(false);
-	let showExplorer = $state(false);
-	let explorerPath = $state('');
-	let explorerParent = $state('');
-	let explorerDirs = $state<string[]>([]);
 	let pathSep = $state('/');
 
 	type GitChangeItem = {
@@ -71,6 +67,12 @@
 	let editingError = $state('');
 	let loadingEditor = $state(false);
 	let savingEditor = $state(false);
+
+	let cloneSourcePath = $state('');
+	let cloneTargetPath = $state('');
+	let isCloning = $state(false);
+	let cloneProgress = $state(0);
+	let pickerTarget = $state<'project' | 'clone-source' | 'clone-target'>('project');
 
 	// Real-time Watcher State
 	let eventSource: EventSource | null = null;
@@ -574,32 +576,69 @@
 		}, 10000);
 	};
 
-	const openExplorer = async (navPath: string = '') => {
-		showExplorer = true;
-		errorMessage = '';
+	const openFolderPicker = async (target: 'project' | 'clone-source' | 'clone-target') => {
 		try {
-			const res = await fetch(`/api/git/picker?path=${encodeURIComponent(navPath)}`);
+			const res = await fetch('/api/git/picker/native');
 			const data = await res.json();
-			if (data.success) {
-				explorerPath = data.currentPath;
-				explorerParent = data.parentPath;
-				explorerDirs = data.directories;
-				pathSep = data.sep;
-			} else {
-				errorMessage = data.error;
+			if (data.success && data.path) {
+				if (target === 'project') {
+					switchProject(data.path);
+				} else if (target === 'clone-source') {
+					cloneSourcePath = data.path;
+				} else if (target === 'clone-target') {
+					cloneTargetPath = data.path;
+				}
 			}
 		} catch (e) {
-			errorMessage = 'Connection lost to folder server';
+			console.error('Failed to open native folder picker', e);
 		}
 	};
 
-	const selectFolder = () => {
-		projectPath = explorerPath;
-		showExplorer = false;
-		localStorage.setItem('last-project-path', projectPath);
-		addToRecentProjects(projectPath);
-		setupWatcher(projectPath);
-		syncWithGit();
+	const handleCloneProject = async () => {
+		if (!cloneSourcePath.trim() || !cloneTargetPath.trim() || isCloning) return;
+		isCloning = true;
+		cloneProgress = 0;
+		errorMessage = '';
+		successMessage = 'Cloning project...';
+
+		const progressInterval = setInterval(() => {
+			if (cloneProgress < 90) {
+				const diff = (90 - cloneProgress) * 0.15;
+				cloneProgress += Math.max(1, Math.round(diff));
+			}
+		}, 150);
+
+		try {
+			const res = await fetch('/api/git/clone', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					sourcePath: cloneSourcePath,
+					targetPath: cloneTargetPath
+				})
+			});
+			const data = await res.json();
+			clearInterval(progressInterval);
+
+			if (data.success) {
+				cloneProgress = 100;
+				successMessage = 'Project cloned successfully!';
+				setTimeout(() => (successMessage = ''), 3000);
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				switchProject(cloneTargetPath);
+				cloneSourcePath = '';
+				cloneTargetPath = '';
+			} else {
+				cloneProgress = 0;
+				errorMessage = `Clone failed: ${data.error || 'Unknown error'}`;
+			}
+		} catch (e: any) {
+			clearInterval(progressInterval);
+			cloneProgress = 0;
+			errorMessage = `Failed to clone: ${e.message}`;
+		} finally {
+			isCloning = false;
+		}
 	};
 
 	let refetchPending = false;
@@ -679,6 +718,61 @@
 	let gitCommits = $state<any[]>([]);
 	let isLoadingCommits = $state(false);
 	let activeLogHistoryTab = $state<'git' | 'local'>('git');
+
+	let expandedCommitId = $state<string | null>(null);
+	let loadingCommitId = $state<string | null>(null);
+
+	const isCommitOutgoing = (index: number) => {
+		const firstOriginIdx = gitCommits.findIndex(
+			(c) => c.refs && c.refs.toLowerCase().includes('origin/')
+		);
+		if (firstOriginIdx === -1) return false;
+		return index < firstOriginIdx;
+	};
+
+	const toggleCommitAccordion = async (commit: any) => {
+		if (expandedCommitId === commit.id) {
+			expandedCommitId = null;
+			return;
+		}
+
+		expandedCommitId = commit.id;
+
+		if (!commit.files || commit.files.length === 0) {
+			loadingCommitId = commit.id;
+			try {
+				const res = await fetch(
+					`/api/git/commits?path=${encodeURIComponent(projectPath)}&commit=${commit.id}`
+				);
+				const data = await res.json();
+				if (data.success && data.files) {
+					commit.files = data.files;
+				}
+			} catch (e) {
+				console.error('Failed to fetch commit files', e);
+			} finally {
+				loadingCommitId = null;
+			}
+		}
+	};
+
+	const handleUndoCommit = async (commit: any) => {
+		const matchingTask = kanbanStore.tasks.find((t) => t.gitCommitHash === commit.id);
+		if (matchingTask) {
+			await kanbanStore.removeTask(matchingTask.id);
+		} else {
+			const shouldUndo = confirm(
+				'Undo this Git commit? (This will perform a soft reset to HEAD~1)'
+			);
+			if (!shouldUndo) return;
+			const res = await kanbanStore.undoGitCommit(projectPath, commit.id);
+			if (res.success) {
+				syncWithGit();
+			} else {
+				alert(`Failed to undo commit: ${res.error || res.raw}`);
+			}
+		}
+	};
 
 	const fetchGitCommits = async () => {
 		if (!projectPath.trim()) return;
@@ -1899,8 +1993,15 @@
 								<div
 									class="mb-1 flex items-center justify-between border-b border-base-content/5 px-1 py-1.5 text-[10px] font-bold tracking-wider uppercase opacity-60 select-none"
 								>
-									<div class="flex items-center gap-1">
-										<span class="h-1.5 w-1.5 rounded-full bg-success"></span>
+									<div class="flex items-center gap-1.5">
+										<input
+											type="checkbox"
+											checked={stagedChanges.length > 0 && stagedChanges.every((s) => s.selected)}
+											class="checkbox checkbox-xs checkbox-success scale-75"
+											onchange={() => toggleSelectAll(true)}
+											disabled={stagedChanges.length === 0}
+											aria-label="Select all staged changes"
+										/>
 										<span>Staged Changes</span>
 									</div>
 									<div class="flex items-center gap-2">
@@ -1997,8 +2098,15 @@
 								<div
 									class="mb-1 flex items-center justify-between border-b border-b-base-content/5 px-1 py-1.5 text-[10px] font-bold tracking-wider uppercase opacity-60 select-none"
 								>
-									<div class="flex items-center gap-1">
-										<span class="h-1.5 w-1.5 rounded-full bg-warning"></span>
+									<div class="flex items-center gap-1.5">
+										<input
+											type="checkbox"
+											checked={suggestions.length > 0 && suggestions.every((s) => s.selected)}
+											class="checkbox checkbox-xs checkbox-warning scale-75"
+											onchange={() => toggleSelectAll(false)}
+											disabled={suggestions.length === 0}
+											aria-label="Select all changes"
+										/>
 										<span>Changes</span>
 									</div>
 									<div class="flex items-center gap-2">
@@ -2188,7 +2296,7 @@
 							</div>
 
 							<button
-								onclick={() => openExplorer(projectPath)}
+								onclick={() => openFolderPicker('project')}
 								class="btn w-full gap-1.5 rounded-lg text-xs font-bold tracking-wider uppercase btn-sm btn-primary"
 							>
 								<svg
@@ -2271,6 +2379,93 @@
 										No recent projects recorded.
 									</div>
 								{/if}
+							</div>
+
+							<!-- CLONE LOCAL REPOSITORY PANEL -->
+							<div class="divider my-2 opacity-30"></div>
+							<div
+								class="card flex flex-col gap-3 rounded-2xl border border-base-content/5 bg-base-200/50 p-4 text-left shadow-sm"
+							>
+								<h3 class="text-xs font-black tracking-wider uppercase opacity-60">
+									Clone Local Project
+								</h3>
+								<p class="text-[10px] opacity-75">
+									Clone any local folder to use it as your primary remote repository.
+								</p>
+
+								<div class="form-control w-full gap-1">
+									<label class="label p-0" for="clone-source-input">
+										<span class="label-text text-[9px] font-bold uppercase opacity-55"
+											>Source Project Folder</span
+										>
+									</label>
+									<div class="flex gap-1.5">
+										<input
+											id="clone-source-input"
+											type="text"
+											bind:value={cloneSourcePath}
+											placeholder="C:/path/to/source"
+											class="input input-bordered input-xs flex-1 rounded font-mono text-[10px]"
+										/>
+										<button
+											onclick={() => openFolderPicker('clone-source')}
+											class="btn btn-square btn-xs btn-outline rounded"
+											title="Browse source path"
+										>
+											📂
+										</button>
+									</div>
+								</div>
+
+								<div class="form-control w-full gap-1">
+									<label class="label p-0" for="clone-target-input">
+										<span class="label-text text-[9px] font-bold uppercase opacity-55"
+											>New Target Folder (Clone)</span
+										>
+									</label>
+									<div class="flex gap-1.5">
+										<input
+											id="clone-target-input"
+											type="text"
+											bind:value={cloneTargetPath}
+											placeholder="C:/path/to/destination"
+											class="input input-bordered input-xs flex-1 rounded font-mono text-[10px]"
+										/>
+										<button
+											onclick={() => openFolderPicker('clone-target')}
+											class="btn btn-square btn-xs btn-outline rounded"
+											title="Browse destination path"
+										>
+											📂
+										</button>
+									</div>
+								</div>
+
+								{#if isCloning}
+									<div class="flex flex-col gap-1 mt-1">
+										<div class="flex justify-between items-center text-[9px] font-mono opacity-80">
+											<span>Progress:</span>
+											<span class="font-bold">{cloneProgress}%</span>
+										</div>
+										<progress
+											class="progress progress-secondary w-full h-1.5 rounded-full"
+											value={cloneProgress}
+											max="100"
+										></progress>
+									</div>
+								{/if}
+
+								<button
+									onclick={handleCloneProject}
+									disabled={isCloning || !cloneSourcePath || !cloneTargetPath}
+									class="btn btn-xs btn-secondary w-full uppercase font-bold tracking-wider rounded mt-1"
+								>
+									{#if isCloning}
+										<span class="loading loading-spinner loading-xs"></span> Cloning...
+									{:else}
+										Clone & Open Workspace
+									{/if}
+								</button>
 							</div>
 						</div>
 
@@ -2648,7 +2843,7 @@
 									</span>
 								{/if}
 								<button
-									onclick={() => openExplorer(projectPath)}
+									onclick={() => openFolderPicker('project')}
 									class="btn rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all btn-sm btn-primary"
 								>
 									Pick Workspace Folder
@@ -2845,93 +3040,127 @@
 								class="vscode-scrollbar flex max-h-[60vh] flex-1 flex-col gap-2 overflow-y-auto pr-1"
 							>
 								{#if activeLogHistoryTab === 'git'}
-									{#each gitCommits as commit (commit.id)}
-										<!-- Ultra-polished compact, interactive, VS Code styled commit row for Git Graph -->
-										<div
-											onclick={() => openLogTab(commit)}
-											onkeydown={(e) => e.key === 'Enter' && openLogTab(commit)}
-											role="button"
-											tabindex="0"
-											class="group relative flex cursor-pointer flex-col justify-between gap-3 rounded-xl border border-base-content/5 bg-base-200/40 p-3 transition-all select-none hover:border-primary/20 hover:bg-base-200/90 md:flex-row md:items-center"
-										>
-											<!-- Left Part: Monospace Hash + Title + Subtitle preview -->
-											<div class="flex min-w-0 items-start gap-3">
-												<div class="mt-0.5 flex shrink-0 flex-col items-center gap-1">
-													<!-- Short Monospace Hash Badge -->
-													<span
-														class="rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-primary uppercase"
-													>
-														{commit.id.slice(0, 7)}
-													</span>
-													<!-- Active Indicator Dot -->
-													<span
-														class="h-1.5 w-1.5 rounded-full bg-success shadow shadow-success/30"
-														title="Synchronized"
-													></span>
-												</div>
+									{#each gitCommits as commit, index (commit.id)}
+										<!-- Timeline Row Container -->
+										<div class="relative pl-7 py-1">
+											<!-- Vertical line connecting dots -->
+											{#if index < gitCommits.length - 1}
+												<div class="absolute left-[13px] top-[24px] bottom-[-24px] w-0.5 {isCommitOutgoing(index) ? 'bg-primary' : 'bg-secondary/40'}"></div>
+											{/if}
+											
+											<!-- Colored Dot -->
+											<div class="absolute left-[9px] top-[14px] z-10 flex h-2.5 w-2.5 items-center justify-center">
+												{#if isCommitOutgoing(index)}
+													<div class="h-2.5 w-2.5 rounded-full border-2 border-primary bg-base-100 ring-2 ring-primary/20"></div>
+												{:else}
+													<div class="h-2.5 w-2.5 rounded-full bg-secondary ring-2 ring-secondary/20"></div>
+												{/if}
+											</div>
 
-												<div class="flex min-w-0 flex-col text-left">
-													<div class="flex flex-wrap items-center gap-2">
-														<!-- Title / Commit Summary -->
+											<!-- Interactive Row Card -->
+											<div
+												onclick={() => toggleCommitAccordion(commit)}
+												onkeydown={(e) => e.key === 'Enter' && toggleCommitAccordion(commit)}
+												role="button"
+												tabindex="0"
+												class="group flex cursor-pointer flex-col gap-2 rounded-xl border border-base-content/5 bg-base-200/40 p-3 transition-all select-none hover:border-primary/20 hover:bg-base-200/90 text-left"
+											>
+												<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+													<!-- Title / Commit Summary -->
+													<div class="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-row md:items-center">
+														<!-- Short Monospace Hash Badge -->
 														<span
-															class="max-w-md truncate text-[12px] font-bold text-base-content transition-colors group-hover:text-primary"
+															class="w-fit rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-primary uppercase"
+														>
+															{commit.id.slice(0, 7)}
+														</span>
+														<span
+															class="truncate text-[12px] font-bold text-base-content transition-colors group-hover:text-primary"
 														>
 															{commit.title}
 														</span>
-														<!-- Branch Decorator Tag -->
-														{#if commit.refs}
-															<span
-																class="badge h-4 border-secondary/20 bg-secondary/10 px-1.5 font-mono text-[9px] font-bold text-secondary"
+													</div>
+
+													<!-- Branch Decorator Tags with Premium Icons -->
+													{#if commit.refs}
+														<div class="flex flex-wrap gap-1">
+															{#each commit.refs.split(',') as rawRef}
+																{@const ref = rawRef.trim()}
+																{#if ref.includes('HEAD ->')}
+																	<span class="badge h-4.5 gap-1 border-primary/20 bg-primary/10 px-2 font-mono text-[9px] font-bold text-primary">
+																		<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+																		{ref.replace('HEAD ->', '').trim()}
+																	</span>
+																{:else if ref.toLowerCase().includes('origin/') || ref.toLowerCase().includes('upstream/')}
+																	<span class="badge h-4.5 gap-1 border-secondary/20 bg-secondary/10 px-2 font-mono text-[9px] font-bold text-secondary">
+																		<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.47 0-.89.09-1.3.26A5 5 0 0 0 5 13c0 2.2 1.8 4 4 4h8.5Z"/></svg>
+																		{ref}
+																	</span>
+																{:else}
+																	<span class="badge h-4.5 border-base-content/10 bg-base-200 px-2 font-mono text-[9px] font-bold opacity-60">
+																		{ref}
+																	</span>
+																{/if}
+															{/each}
+														</div>
+													{/if}
+												</div>
+
+												<div class="flex items-center justify-between text-[11px] opacity-50">
+													<span>Author: {commit.author}</span>
+													<div class="flex items-center gap-1.5">
+														<span class="font-mono">{commit.date}</span>
+														{#if index === 0}
+															<button
+																onclick={(e) => {
+																	e.stopPropagation();
+																	handleUndoCommit(commit);
+																}}
+																class="btn btn-square text-warning/70 btn-ghost transition-colors btn-xs hover:bg-warning/10 hover:text-warning"
+																title="Undo Last Commit"
 															>
-																{commit.refs}
-															</span>
+																<svg
+																	xmlns="http://www.w3.org/2000/svg"
+																	width="11"
+																	height="11"
+																	viewBox="0 0 24 24"
+																	fill="none"
+																	stroke="currentColor"
+																	stroke-width="2.5"
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg
+																>
+															</button>
 														{/if}
 													</div>
-													<span
-														class="mt-0.5 max-w-xl truncate text-[11px] leading-relaxed font-medium opacity-50"
-													>
-														Author: {commit.author}
-													</span>
 												</div>
-											</div>
 
-											<!-- Right Part: Commit timestamp and Details Action -->
-											<div class="flex shrink-0 items-center gap-3 self-end md:self-center">
-												<!-- Date formatted cleanly -->
-												<span
-													class="font-mono text-[10px] font-bold tracking-wider uppercase opacity-40"
-												>
-													{commit.date}
-												</span>
-
-												<!-- View Details Button -->
-												<div class="flex items-center gap-1 border-l border-base-content/10 pl-1">
-													<button
-														onclick={(e) => {
-															e.stopPropagation();
-															openLogTab(commit);
-														}}
-														class="btn btn-square text-base-content/60 btn-ghost transition-colors btn-xs hover:bg-primary/10 hover:text-primary"
-														title="View Commit Details & Diffs"
-													>
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															width="13"
-															height="13"
-															viewBox="0 0 24 24"
-															fill="none"
-															stroke="currentColor"
-															stroke-width="2.5"
-															><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
-															></path><polyline points="15 3 21 3 21 9"></polyline><line
-																x1="10"
-																y1="14"
-																x2="21"
-																y2="3"
-															></line></svg
-														>
-													</button>
-												</div>
+												<!-- Accordion Panel Details -->
+												{#if expandedCommitId === commit.id}
+													<div class="mt-2 flex flex-col gap-2 border-t border-base-content/10 pt-2" transition:slide>
+														{#if loadingCommitId === commit.id}
+															<div class="flex items-center gap-2 py-2 text-xs text-primary font-semibold">
+																<span class="loading loading-spinner loading-xs"></span>
+																<span>Loading modified files...</span>
+															</div>
+														{:else if commit.files && commit.files.length > 0}
+															<div class="flex flex-col gap-1">
+																<p class="font-mono text-[9px] uppercase tracking-widest opacity-45">Modified Files</p>
+																{#each commit.files as f}
+																	<div class="flex items-center justify-between gap-4 font-mono bg-base-200/50 hover:bg-base-200 px-2.5 py-1.5 rounded-lg border border-base-content/5 transition-all text-[10px]">
+																		<span class="truncate text-base-content/95">{f.file}</span>
+																		<span class="badge badge-xs scale-90 border-transparent font-bold {f.type === 'Added' ? 'bg-success/20 text-success' : f.type === 'Deleted' ? 'bg-error/20 text-error' : 'bg-warning/20 text-warning'}">
+																			{f.status || 'M'}
+																		</span>
+																	</div>
+																{/each}
+															</div>
+														{:else}
+															<p class="text-xs opacity-40 font-mono py-1">No file changes detected.</p>
+														{/if}
+													</div>
+												{/if}
 											</div>
 										</div>
 									{:else}
@@ -2964,39 +3193,42 @@
 										{/if}
 									{/each}
 								{:else}
-									{#each kanbanStore.tasks as task (task.id)}
-										<!-- Ultra-polished compact, interactive, VS Code styled commit row -->
-										<div
-											onclick={() => openLogTab(task)}
-											onkeydown={(e) => e.key === 'Enter' && openLogTab(task)}
-											role="button"
-											tabindex="0"
-											class="group relative flex cursor-pointer flex-col justify-between gap-3 rounded-xl border border-base-content/5 bg-base-200/40 p-3 transition-all select-none hover:border-primary/20 hover:bg-base-200/90 md:flex-row md:items-center"
-										>
-											<!-- Left Part: Monospace Hash + Title + Subtitle preview -->
-											<div class="flex min-w-0 items-start gap-3">
-												<div class="mt-0.5 flex shrink-0 flex-col items-center gap-1">
-													<!-- Short Monospace Hash Badge -->
-													<span
-														class="rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-primary uppercase"
-													>
-														{task.id.slice(0, 7)}
-													</span>
-													<!-- Active Indicator Dot -->
-													<span
-														class="h-1.5 w-1.5 rounded-full bg-success shadow shadow-success/30"
-														title="Synchronized"
-													></span>
-												</div>
+									{#each kanbanStore.tasks as task, index (task.id)}
+										<!-- Timeline Row Container -->
+										<div class="relative pl-7 py-1">
+											<!-- Vertical line connecting dots -->
+											{#if index < kanbanStore.tasks.length - 1}
+												<div class="absolute left-[13px] top-[24px] bottom-[-24px] w-0.5 bg-success/30"></div>
+											{/if}
+											
+											<!-- Colored Dot -->
+											<div class="absolute left-[9px] top-[14px] z-10 flex h-2.5 w-2.5 items-center justify-center">
+												<div class="h-2.5 w-2.5 rounded-full bg-success ring-2 ring-success/20"></div>
+											</div>
 
-												<div class="flex min-w-0 flex-col text-left">
-													<div class="flex flex-wrap items-center gap-2">
-														<!-- Title / Conventional Commit Summary -->
+											<!-- Interactive Row Card -->
+											<div
+												onclick={() => toggleCommitAccordion(task)}
+												onkeydown={(e) => e.key === 'Enter' && toggleCommitAccordion(task)}
+												role="button"
+												tabindex="0"
+												class="group flex cursor-pointer flex-col gap-2 rounded-xl border border-base-content/5 bg-base-200/40 p-3 transition-all select-none hover:border-primary/20 hover:bg-base-200/90 text-left"
+											>
+												<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+													<!-- Title / Conventional Commit Summary -->
+													<div class="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-row md:items-center">
+														<!-- Short Monospace Hash Badge -->
 														<span
-															class="max-w-md truncate text-[12px] font-bold text-base-content transition-colors group-hover:text-primary"
+															class="w-fit rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-primary uppercase"
+														>
+															{task.id.slice(0, 7)}
+														</span>
+														<span
+															class="truncate text-[12px] font-bold text-base-content transition-colors group-hover:text-primary"
 														>
 															{task.title}
 														</span>
+														
 														<!-- Branch Badge -->
 														<span
 															class="badge h-4 border-secondary/20 bg-secondary/10 px-1.5 font-mono text-[9px] font-bold text-secondary"
@@ -3004,133 +3236,112 @@
 															main
 														</span>
 													</div>
-													<!-- Description / Scope Context -->
-													{#if task.description || task.notes}
-														<span
-															class="mt-0.5 max-w-xl truncate text-[11px] leading-relaxed font-medium opacity-50"
-														>
-															{task.description ? task.description + ' — ' : ''}{task.notes || ''}
+
+													<div class="flex items-center gap-2">
+														<!-- Backups count badge -->
+														<span class="badge badge-sm border-base-content/10 bg-base-100 px-2 py-1 font-semibold opacity-75 gap-1">
+															<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+															{task.files.length} backups
 														</span>
-													{/if}
+
+														<!-- Actions on the right -->
+														<div class="flex items-center gap-1 border-l border-base-content/10 pl-1">
+															<!-- Undo Last Commit or Delete Log button -->
+															{#if task.id === kanbanStore.tasks[0]?.id && task.gitCommitHash}
+																<button
+																	onclick={(e) => {
+																		e.stopPropagation();
+																		kanbanStore.removeTask(task.id);
+																	}}
+																	class="btn btn-square text-warning/70 btn-ghost transition-colors btn-xs hover:bg-warning/10 hover:text-warning"
+																	title="Undo Last Commit & Delete Log"
+																>
+																	<svg
+																		xmlns="http://www.w3.org/2000/svg"
+																		width="13"
+																		height="13"
+																		viewBox="0 0 24 24"
+																		fill="none"
+																		stroke="currentColor"
+																		stroke-width="2.5"
+																		stroke-linecap="round"
+																		stroke-linejoin="round"
+																		><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg
+																	>
+																</button>
+															{:else}
+																<button
+																	onclick={(e) => {
+																		e.stopPropagation();
+																		kanbanStore.removeTask(task.id);
+																	}}
+																	class="btn btn-square text-error/60 btn-ghost transition-colors btn-xs hover:bg-error/10 hover:text-error"
+																	title="Delete Log Entry"
+																>
+																	<svg
+																		xmlns="http://www.w3.org/2000/svg"
+																		width="13"
+																		height="13"
+																		viewBox="0 0 24 24"
+																		fill="none"
+																		stroke="currentColor"
+																		stroke-width="2.5"
+																		><line x1="18" y1="6" x2="6" y2="18"></line><line
+																			x1="6"
+																			y1="6"
+																			x2="18"
+																			y2="18"
+																		></line></svg
+																	>
+																</button>
+															{/if}
+														</div>
+													</div>
 												</div>
-											</div>
 
-											<!-- Right Part: Backups count, Diff changes count, and Actions -->
-											<div class="flex shrink-0 items-center gap-3 self-end md:self-center">
-												<!-- Date/Time formatted cleanly -->
-												<span
-													class="font-mono text-[10px] font-bold tracking-wider uppercase opacity-40"
-												>
-													{new Date(task.createdAt).toLocaleString('en-GB', {
-														day: '2-digit',
-														month: 'short',
-														hour: '2-digit',
-														minute: '2-digit'
-													})}
-												</span>
+												{#if task.description || task.notes}
+													<p class="truncate text-[11px] leading-relaxed font-medium opacity-50 text-left">
+														{task.description ? task.description + ' — ' : ''}{task.notes || ''}
+													</p>
+												{/if}
 
-												<!-- Impacted file counts badge -->
-												<div
-													class="badge gap-1 border-base-content/10 bg-base-100 px-2.5 py-2 badge-sm font-semibold opacity-75"
-												>
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														width="9"
-														height="9"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="2.5"
-														><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-														></path><polyline points="14 2 14 8 20 8"></polyline></svg
-													>
-													{task.files.length} backups
+												<div class="flex items-center justify-between text-[11px] opacity-40">
+													<span class="font-mono">
+														{new Date(task.createdAt).toLocaleString('en-GB', {
+															day: '2-digit',
+															month: 'short',
+															hour: '2-digit',
+															minute: '2-digit'
+														})}
+													</span>
 												</div>
 
-												<!-- Interactive action icon overlays (Fades in on hover) -->
-												<div class="flex items-center gap-1 border-l border-base-content/10 pl-1">
-													<!-- Open audit tab button -->
-													<button
-														onclick={(e) => {
-															e.stopPropagation();
-															openLogTab(task);
-														}}
-														class="btn btn-square text-base-content/60 btn-ghost transition-colors btn-xs hover:bg-primary/10 hover:text-primary"
-														title="View Detailed Diff & Backups"
-													>
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															width="13"
-															height="13"
-															viewBox="0 0 24 24"
-															fill="none"
-															stroke="currentColor"
-															stroke-width="2.5"
-															><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
-															></path><polyline points="15 3 21 3 21 9"></polyline><line
-																x1="10"
-																y1="14"
-																x2="21"
-																y2="3"
-															></line></svg
-														>
-													</button>
-
-													<!-- Download backup package trigger -->
-													{#if task.files.length > 0}
-														<button
-															onclick={(e) => {
-																e.stopPropagation();
-																downloadBackupFile(task, task.files[0]);
-															}}
-															class="btn btn-square text-base-content/60 btn-ghost transition-colors btn-xs hover:bg-success/10 hover:text-success"
-															title="Download backup version of first file"
-														>
-															<svg
-																xmlns="http://www.w3.org/2000/svg"
-																width="13"
-																height="13"
-																viewBox="0 0 24 24"
-																fill="none"
-																stroke="currentColor"
-																stroke-width="2.5"
-																><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-																></path><polyline points="7 10 12 15 17 10"></polyline><line
-																	x1="12"
-																	y1="15"
-																	x2="12"
-																	y2="3"
-																></line></svg
-															>
-														</button>
-													{/if}
-
-													<!-- Delete Log button -->
-													<button
-														onclick={(e) => {
-															e.stopPropagation();
-															kanbanStore.removeTask(task.id);
-														}}
-														class="btn btn-square text-error/60 btn-ghost transition-colors btn-xs hover:bg-error/10 hover:text-error"
-														title="Delete Log Entry"
-													>
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															width="13"
-															height="13"
-															viewBox="0 0 24 24"
-															fill="none"
-															stroke="currentColor"
-															stroke-width="2.5"
-															><line x1="18" y1="6" x2="6" y2="18"></line><line
-																x1="6"
-																y1="6"
-																x2="18"
-																y2="18"
-															></line></svg
-														>
-													</button>
-												</div>
+												<!-- Accordion Panel Details -->
+												{#if expandedCommitId === task.id}
+													<div class="mt-2 flex flex-col gap-2 border-t border-base-content/10 pt-2" transition:slide>
+														{#if task.files && task.files.length > 0}
+															<div class="flex flex-col gap-1">
+																<p class="font-mono text-[9px] uppercase tracking-widest opacity-45">Backup Files</p>
+																{#each task.files as file}
+																	<div class="flex items-center justify-between gap-4 font-mono bg-base-200/50 hover:bg-base-200 px-2.5 py-1 rounded-lg border border-base-content/5 transition-all text-[10px]">
+																		<span class="truncate text-base-content/95">{file}</span>
+																		<button
+																			onclick={(e) => {
+																				e.stopPropagation();
+																				downloadBackupFile(task, file);
+																			}}
+																			class="btn btn-ghost btn-xs text-primary font-bold hover:bg-primary/10 rounded-md"
+																		>
+																			Download
+																		</button>
+																	</div>
+																{/each}
+															</div>
+														{:else}
+															<p class="text-xs opacity-40 font-mono py-1">No backup files found.</p>
+														{/if}
+													</div>
+												{/if}
 											</div>
 										</div>
 									{:else}
@@ -3699,21 +3910,33 @@
 										>
 									</div>
 
-									<button
-										onclick={() => {
-											if (
-												confirm(
-													'Are you sure you want to delete this duty from the history archive?'
-												)
-											) {
+									{#if task.id === kanbanStore.tasks[0]?.id && task.gitCommitHash}
+										<button
+											onclick={() => {
 												kanbanStore.removeTask(task.id);
 												closeTab(new MouseEvent('click'), tab.id);
-											}
-										}}
-										class="btn rounded-xl font-mono text-xs font-bold uppercase btn-outline btn-sm btn-error"
-									>
-										Delete Log Entry
-									</button>
+											}}
+											class="btn rounded-xl font-mono text-xs font-bold uppercase btn-outline btn-sm btn-warning"
+										>
+											Undo Last Commit & Delete Log
+										</button>
+									{:else}
+										<button
+											onclick={() => {
+												if (
+													confirm(
+														'Are you sure you want to delete this duty from the history archive?'
+													)
+												) {
+													kanbanStore.removeTask(task.id);
+													closeTab(new MouseEvent('click'), tab.id);
+												}
+											}}
+											class="btn rounded-xl font-mono text-xs font-bold uppercase btn-outline btn-sm btn-error"
+										>
+											Delete Log Entry
+										</button>
+									{/if}
 								</div>
 
 								<div class="grid grid-cols-1 gap-6 md:grid-cols-12">
@@ -4014,95 +4237,3 @@
 
 <!-- Integration of system config popups -->
 <SettingsModal bind:open={showSettingsModal} />
-
-<!-- Explorer picker overlay popup -->
-{#if showExplorer}
-	<div
-		class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
-		in:fade
-	>
-		<div
-			class="card flex max-h-[75vh] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border border-base-content/15 bg-base-100 shadow-2xl"
-			in:fly={{ y: 20 }}
-		>
-			<div class="flex flex-col gap-3 border-b border-base-content/10 bg-base-200/50 p-5">
-				<div class="flex items-center justify-between">
-					<h3 class="text-xs font-black tracking-widest text-primary uppercase">
-						Local Path Explorer
-					</h3>
-					<button
-						type="button"
-						class="btn btn-circle btn-ghost btn-xs"
-						onclick={() => (showExplorer = false)}>✕</button
-					>
-				</div>
-				<div class="flex items-center gap-2">
-					<button
-						type="button"
-						class="btn h-8 rounded-lg border border-base-content/10 px-2 btn-ghost btn-xs"
-						onclick={() => openExplorer(explorerParent)}
-						title="Back"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="14"
-							height="14"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg
-						>
-					</button>
-					<div
-						class="flex-1 truncate rounded-lg border border-base-content/5 bg-base-200 px-3 py-1.5 font-mono text-[9px] text-base-content/80 shadow-inner"
-					>
-						{explorerPath}
-					</div>
-				</div>
-			</div>
-
-			<div
-				class="custom-scrollbar grid flex-1 grid-cols-1 gap-2 overflow-y-auto p-4 sm:grid-cols-2"
-			>
-				{#each explorerDirs as dir}
-					<button
-						type="button"
-						class="group flex items-center gap-3 rounded-xl border border-transparent bg-base-200/20 p-2.5 text-left transition-all hover:border-primary/10 hover:bg-primary/10 hover:text-primary"
-						onclick={() => openExplorer(explorerPath + pathSep + dir)}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="16"
-							height="16"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							class="text-primary/40 transition-colors group-hover:text-primary"
-							><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
-							></path></svg
-						>
-						<span class="truncate text-[10px] font-bold text-base-content/80">{dir}</span>
-					</button>
-				{/each}
-			</div>
-
-			<div class="flex justify-between gap-4 border-t border-base-content/10 bg-base-200/50 p-5">
-				<button
-					type="button"
-					class="btn rounded-xl px-6 text-xs uppercase btn-ghost"
-					onclick={() => (showExplorer = false)}>Cancel</button
-				>
-				<button
-					type="button"
-					class="btn rounded-xl px-6 text-xs font-black uppercase btn-primary"
-					onclick={selectFolder}>Select This Folder</button
-				>
-			</div>
-		</div>
-	</div>
-{/if}
