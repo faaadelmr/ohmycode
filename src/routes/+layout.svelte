@@ -2,7 +2,6 @@
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { theme } from '$lib/theme';
-	import { uiStyle } from '$lib/ui-style';
 	import { onMount } from 'svelte';
 	import { normalizeViewport } from '@faaadelmr/css-viewport';
 
@@ -21,7 +20,6 @@
 <div
 	class="min-h-screen-vh w-screen flex flex-col bg-base-100 font-sans text-base-content overflow-hidden select-none"
 	data-theme={$theme}
-	data-ui-style={$uiStyle}
 >
 	{@render children()}
 </div>

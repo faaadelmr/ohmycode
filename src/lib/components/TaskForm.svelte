@@ -4,7 +4,6 @@
 	import { fade, slide, fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import { theme, themes } from '$lib/theme';
-	import { setUiStyle, uiStyle, uiStyles, type UiStyleId } from '$lib/ui-style';
 	import CommitForm from './CommitForm.svelte';
 	import SettingsModal from './SettingsModal.svelte';
 	import StatusBar from './StatusBar.svelte';
@@ -1670,7 +1669,7 @@
 	<div class="flex w-full flex-1 overflow-hidden">
 		<!-- 2.1 Activity Bar (Far Left) -->
 		<aside
-			class="flex w-12 shrink-0 flex-col items-center justify-between border-r border-base-content/10 bg-base-300 py-2 select-none"
+			class="flex w-12 shrink-0 flex-col items-center justify-between border-r border-base-content/8 glass-panel py-2 select-none relative z-20"
 		>
 			<div class="flex w-full flex-col items-center gap-3.5">
 				<!-- Explorer Icon -->
@@ -1850,7 +1849,7 @@
 			<div class="flex w-full flex-col items-center gap-2">
 				<button
 					onclick={() => (showSettingsModal = true)}
-					class="rounded-lg p-2.5 text-base-content/50 transition-colors hover:text-base-content"
+					class="rounded-lg p-2.5 text-base-content/50 transition-all hover:text-primary hover:bg-primary/10"
 					title="System Settings Configuration"
 				>
 					<svg
@@ -1872,12 +1871,12 @@
 		<!-- 2.2 Sidebar Panel (Collapsible, holds active views) -->
 		{#if !isSidebarCollapsed}
 			<section
-				class="flex h-full w-[310px] shrink-0 flex-col border-r border-base-content/10 bg-base-200/50 select-none"
+				class="flex h-full w-[310px] shrink-0 flex-col border-r border-base-content/8 glass-panel select-none relative z-10"
 				transition:slide={{ axis: 'x', duration: 200 }}
 			>
 				<!-- Sidebar Header -->
 				<div
-					class="flex h-10 shrink-0 items-center justify-between border-b border-base-content/5 px-4"
+					class="flex h-10 shrink-0 items-center justify-between border-b border-base-content/8 px-4 bg-base-content/3"
 				>
 					<span class="text-[11px] font-bold tracking-widest uppercase opacity-70">
 						{#if activeSidebar === 'source-control'}
@@ -2494,26 +2493,6 @@
 								</select>
 							</div>
 
-							<div class="form-control w-full">
-								<label class="label pt-0 pb-1" for="sidebar-ui-style-select">
-									<span
-										class="label-text text-[10px] font-black tracking-widest uppercase opacity-55"
-										>UI Style Preset</span
-									>
-								</label>
-								<select
-									id="sidebar-ui-style-select"
-									class="select-bordered select w-full rounded-lg bg-base-100 select-sm text-xs font-bold"
-									value={$uiStyle}
-									onchange={(e) =>
-										setUiStyle((e.currentTarget as HTMLSelectElement).value as UiStyleId)}
-								>
-									{#each uiStyles as style}
-										<option value={style.id} selected={$uiStyle === style.id}>{style.label}</option>
-									{/each}
-								</select>
-							</div>
-
 							<div class="divider my-2 opacity-50"></div>
 
 							<!-- Advanced Modal trigger -->
@@ -2854,10 +2833,10 @@
 						<!-- Left deck: start and quick links (Col 4) -->
 						<div class="col-span-12 flex flex-col gap-6 lg:col-span-4">
 							<div
-								class="card flex flex-col gap-4 rounded-2xl border border-base-content/5 bg-base-200/50 p-5 text-left shadow-sm"
+								class="card hover-lift flex flex-col gap-4 rounded-2xl border border-base-content/8 glass-panel p-5 text-left shadow-xl"
 							>
 								<h3
-									class="border-b border-base-content/5 pb-2 text-xs font-black tracking-wider uppercase opacity-60"
+									class="border-b border-base-content/8 pb-2 text-[10px] font-black tracking-widest uppercase opacity-50"
 								>
 									Start Log Actions
 								</h3>
@@ -2905,33 +2884,33 @@
 
 							<!-- Productivity HUD widgets -->
 							<div
-								class="card flex flex-col gap-4 rounded-2xl border border-base-content/5 bg-base-200/50 p-5 text-left shadow-sm"
+								class="card hover-lift flex flex-col gap-4 rounded-2xl border border-base-content/8 glass-panel p-5 text-left shadow-xl"
 							>
 								<h3
-									class="border-b border-base-content/5 pb-2 text-xs font-black tracking-wider uppercase opacity-60"
+									class="border-b border-base-content/8 pb-2 text-[10px] font-black tracking-widest uppercase opacity-50"
 								>
 									Productivity Console
 								</h3>
 
 								<div class="grid grid-cols-2 gap-3">
 									<div
-										class="flex flex-col items-start rounded-xl border border-base-content/10 bg-base-100 p-3 shadow-sm"
+										class="flex flex-col items-start rounded-xl border border-primary/15 bg-primary/5 p-3 hover:bg-primary/10 transition-colors"
 									>
-										<span class="text-[10px] font-bold uppercase opacity-40">Duties Logged</span>
+										<span class="text-[9px] font-bold uppercase opacity-50 tracking-wider">Duties Logged</span>
 										<span class="mt-1 text-2xl font-black text-primary"
 											>{productivityStats.totalLogged}</span
 										>
 									</div>
 									<div
-										class="flex flex-col items-start rounded-xl border border-base-content/10 bg-base-100 p-3 shadow-sm"
+										class="flex flex-col items-start rounded-xl border border-secondary/15 bg-secondary/5 p-3 hover:bg-secondary/10 transition-colors"
 									>
-										<span class="text-[10px] font-bold uppercase opacity-40">Backups Stored</span>
+										<span class="text-[9px] font-bold uppercase opacity-50 tracking-wider">Backups Stored</span>
 										<span class="mt-1 text-2xl font-black text-secondary"
 											>{productivityStats.filesCount}</span
 										>
 									</div>
 									<div
-										class="col-span-2 flex flex-col items-start rounded-xl border border-base-content/10 bg-base-100 p-3 shadow-sm"
+										class="col-span-2 flex flex-col items-start rounded-xl border border-accent/15 bg-accent/5 p-3 hover:bg-accent/10 transition-colors"
 									>
 										<span class="text-[10px] font-bold uppercase opacity-40">Git Accumulations</span
 										>
@@ -2952,7 +2931,7 @@
 
 							<!-- Helpful VS Code system tips -->
 							<div
-								class="card flex flex-col gap-3 rounded-2xl border border-base-content/5 bg-base-200/50 p-5 text-left shadow-sm"
+								class="card hover-lift flex flex-col gap-3 rounded-2xl border border-base-content/8 glass-panel p-5 text-left shadow-xl"
 							>
 								<h3
 									class="border-b border-base-content/5 pb-2 text-xs font-black tracking-wider uppercase opacity-60"

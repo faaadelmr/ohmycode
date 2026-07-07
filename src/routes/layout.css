@@ -43,6 +43,7 @@
   --theme-silk: "silk";
 }
 
+/* ── Override neo-brutalism brutish defaults → soft modern UI ───────────── */
 [data-theme='neo-brutalism'] {
   color-scheme: light;
   --color-base-100: oklch(99% 0 0);
@@ -65,17 +66,18 @@
   --color-warning-content: oklch(0% 0 0);
   --color-error: oklch(66% 0.28 25);
   --color-error-content: oklch(100% 0 0);
-  --radius-selector: 0.15rem;
-  --radius-field: 0.15rem;
-  --radius-box: 0.25rem;
+  /* Override brutal values → soft modern look */
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 0.875rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
-  --border: 2px;
-  --depth: 1;
+  --border: 1px;
+  --depth: 0;
   --noise: 0;
 }
 
-/* Custom theme overrides if needed */
+/* ── Global design tokens ───────────────────────────────────────────────── */
 :root {
   --font-family: 'Inter', system-ui, -apple-system, sans-serif;
   --omc-radius-xs: 0.375rem;
@@ -84,145 +86,76 @@
   --omc-radius-lg: 1rem;
   --omc-radius-xl: 1.25rem;
   --omc-border-width: 1px;
-  --omc-border-opacity: 0.1;
-  --omc-shadow-panel: 0 14px 40px rgba(0, 0, 0, 0.12);
-  --omc-shadow-control: 0 8px 20px rgba(0, 0, 0, 0.08);
-  --omc-control-transform: none;
-  --omc-font-ui: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --omc-font-mono: Menlo, Monaco, Consolas, "Courier New", monospace;
-  --omc-letter-spacing: 0;
-  --omc-panel-bg-mix: color-mix(in oklab, hsl(var(--b1)) 82%, hsl(var(--b2)));
+  --omc-shadow-panel: 0 14px 40px rgba(0, 0, 0, 0.08);
+  --omc-shadow-control: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-[data-ui-style='modern'] {
-  --omc-radius-xs: 0.375rem;
-  --omc-radius-sm: 0.5rem;
-  --omc-radius-md: 0.75rem;
-  --omc-radius-lg: 1rem;
-  --omc-radius-xl: 1.25rem;
-  --omc-border-width: 1px;
-  --omc-border-opacity: 0.1;
-  --omc-shadow-panel: 0 14px 40px rgba(0, 0, 0, 0.13);
-  --omc-shadow-control: 0 8px 20px rgba(0, 0, 0, 0.08);
-  --omc-control-transform: translateY(-1px);
-  --omc-font-ui: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --omc-letter-spacing: 0;
+/* ── Typography ─────────────────────────────────────────────────────────── */
+body,
+.vscode-font {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-[data-ui-style='neo-brutalism'] {
-  --omc-radius-xs: 0.125rem;
-  --omc-radius-sm: 0.1875rem;
-  --omc-radius-md: 0.25rem;
-  --omc-radius-lg: 0.375rem;
-  --omc-radius-xl: 0.5rem;
-  --omc-border-width: 2px;
-  --omc-border-opacity: 0.42;
-  --omc-shadow-panel: 5px 5px 0 rgba(0, 0, 0, 0.82);
-  --omc-shadow-control: 3px 3px 0 rgba(0, 0, 0, 0.78);
-  --omc-control-transform: translate(-1px, -1px);
-  --omc-font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --omc-letter-spacing: 0;
+.vscode-font-mono {
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
-[data-ui-style='flat-design'] {
-  --omc-radius-xs: 0.25rem;
-  --omc-radius-sm: 0.3125rem;
-  --omc-radius-md: 0.375rem;
-  --omc-radius-lg: 0.5rem;
-  --omc-radius-xl: 0.625rem;
-  --omc-border-width: 1px;
-  --omc-border-opacity: 0.14;
-  --omc-shadow-panel: none;
-  --omc-shadow-control: none;
-  --omc-control-transform: none;
-  --omc-font-ui: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --omc-letter-spacing: 0;
-}
-
-[data-ui-style='terminal'] {
-  --omc-radius-xs: 0;
-  --omc-radius-sm: 0.125rem;
-  --omc-radius-md: 0.1875rem;
-  --omc-radius-lg: 0.25rem;
-  --omc-radius-xl: 0.3125rem;
-  --omc-border-width: 1px;
-  --omc-border-opacity: 0.26;
-  --omc-shadow-panel: inset 0 0 0 1px rgba(120, 255, 170, 0.08);
-  --omc-shadow-control: none;
-  --omc-control-transform: none;
-  --omc-font-ui: Menlo, Monaco, Consolas, "Courier New", monospace;
-  --omc-letter-spacing: 0;
-}
-
-[data-ui-style='minimal'] {
-  --omc-radius-xs: 0.5rem;
-  --omc-radius-sm: 0.625rem;
-  --omc-radius-md: 0.875rem;
-  --omc-radius-lg: 1.125rem;
-  --omc-radius-xl: 1.5rem;
-  --omc-border-width: 1px;
-  --omc-border-opacity: 0.07;
-  --omc-shadow-panel: none;
-  --omc-shadow-control: none;
-  --omc-control-transform: none;
-  --omc-font-ui: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --omc-letter-spacing: 0;
-}
-
-[data-ui-style] body,
-[data-ui-style] .vscode-font {
-  font-family: var(--omc-font-ui);
-  letter-spacing: var(--omc-letter-spacing);
-}
-
-[data-ui-style='terminal'] .font-sans,
-[data-ui-style='terminal'] .vscode-font,
-[data-ui-style='terminal'] .btn,
-[data-ui-style='terminal'] .input,
-[data-ui-style='terminal'] .textarea,
-[data-ui-style='terminal'] .select {
-  font-family: var(--omc-font-ui) !important;
-}
-
-[data-ui-style] .card,
-[data-ui-style] .modal-box,
-[data-ui-style] [class*='rounded-2xl'],
-[data-ui-style] [class*='rounded-[2rem]'] {
+/* ── Global border-radius normalization ─────────────────────────────────── */
+/* Large containers: cards, modals */
+.card,
+.modal-box,
+[class*='rounded-2xl'],
+[class*='rounded-[2rem]'],
+[class*='rounded-3xl'] {
   border-radius: var(--omc-radius-xl) !important;
 }
 
-[data-ui-style] .btn,
-[data-ui-style] .input,
-[data-ui-style] .textarea,
-[data-ui-style] .select,
-[data-ui-style] .badge,
-[data-ui-style] [class*='rounded-xl'],
-[data-ui-style] [class*='rounded-lg'],
-[data-ui-style] [class*='rounded-md'] {
+/* Interactive controls */
+.btn,
+.input,
+.textarea,
+.select,
+.badge,
+[class*='rounded-xl'],
+[class*='rounded-lg'],
+[class*='rounded-md'] {
   border-radius: var(--omc-radius-md) !important;
 }
 
-[data-ui-style] .btn,
-[data-ui-style] .input,
-[data-ui-style] .textarea,
-[data-ui-style] .select,
-[data-ui-style] .card,
-[data-ui-style] aside,
-[data-ui-style] section,
-[data-ui-style] main,
-[data-ui-style] [class*='border-base'],
-[data-ui-style] [class*='border-base-content'] {
+/* ── Global border-width normalization ───────────────────────────────────── */
+/* Cap all border widths at 1px (neo-brutalism defaults to 2px) */
+.btn,
+.input,
+.textarea,
+.select,
+.card,
+aside,
+section,
+main,
+[class*='border-base'],
+[class*='border-base-content'],
+[class*='border-primary'],
+[class*='border-secondary'],
+[class*='border-accent'] {
   border-width: var(--omc-border-width) !important;
 }
 
-[data-ui-style] .card,
-[data-ui-style] [class*='shadow-sm'],
-[data-ui-style] [class*='shadow-2xl'],
-[data-ui-style] [class*='shadow-xl'] {
+/* Dashed borders: keep dashed but thin */
+[class*='border-dashed'] {
+  border-width: 1px !important;
+}
+
+/* ── Shadow normalization ───────────────────────────────────────────────── */
+.card,
+[class*='shadow-sm'],
+[class*='shadow-2xl'],
+[class*='shadow-xl'],
+[class*='shadow-md'] {
   box-shadow: var(--omc-shadow-panel) !important;
 }
 
-[data-ui-style] .btn {
+/* ── Button micro-interactions ──────────────────────────────────────────── */
+.btn {
   box-shadow: var(--omc-shadow-control) !important;
   transition:
     transform 140ms ease,
@@ -231,93 +164,79 @@
     border-color 140ms ease;
 }
 
-[data-ui-style] .btn:hover:not(:disabled) {
-  transform: var(--omc-control-transform);
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10) !important;
 }
 
-[data-ui-style='neo-brutalism'] .btn:active:not(:disabled) {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8) !important;
-}
-
-[data-ui-style='terminal'] .btn,
-[data-ui-style='terminal'] .input,
-[data-ui-style='terminal'] .textarea,
-[data-ui-style='terminal'] .select,
-[data-ui-style='terminal'] .badge {
-  text-transform: uppercase;
-}
-
-[data-ui-style='terminal'] .bg-base-300,
-[data-ui-style='terminal'] .bg-base-200,
-[data-ui-style='terminal'] .bg-base-100 {
-  background-image:
-    linear-gradient(rgba(120, 255, 170, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(120, 255, 170, 0.018) 1px, transparent 1px);
-  background-size: 18px 18px;
-}
-
-[data-ui-style='flat-design'] [class*='shadow'],
-[data-ui-style='minimal'] [class*='shadow'] {
-  box-shadow: none !important;
-}
-
-[data-ui-style='minimal'] .border,
-[data-ui-style='minimal'] [class*='border-'] {
-  border-color: color-mix(in oklab, currentColor 7%, transparent) !important;
-}
-
-[data-ui-style='neo-brutalism'] .badge,
-[data-ui-style='neo-brutalism'] .btn,
-[data-ui-style='neo-brutalism'] .input,
-[data-ui-style='neo-brutalism'] .textarea,
-[data-ui-style='neo-brutalism'] .select {
-  font-weight: 900;
-}
-
-[data-ui-style='neo-brutalism'] .opacity-30,
-[data-ui-style='neo-brutalism'] .opacity-35,
-[data-ui-style='neo-brutalism'] .opacity-40,
-[data-ui-style='neo-brutalism'] .opacity-45 {
-  opacity: 0.68 !important;
-}
-
+/* ── Viewport height helper ─────────────────────────────────────────────── */
 .min-h-screen-vh {
   min-height: 100vh; /* Fallback */
   min-height: calc(var(--vh, 1vh) * 100);
 }
 
-/* VS Code premium UI classes */
-.vscode-font {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
-
-.vscode-font-mono {
-  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
-}
-
-/* Scrollbar layout matching VS Code scrollbar behavior */
+/* ── VS Code premium scrollbar ──────────────────────────────────────────── */
 .vscode-scrollbar::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 .vscode-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .vscode-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(120, 120, 120, 0.18);
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  border-radius: 99px;
 }
 .vscode-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(120, 120, 120, 0.35);
-  border: 2px solid transparent;
-  background-clip: padding-box;
 }
 
-/* Prevent accidental drag highlights and text selection in panels */
+/* ── No text-select in panels ───────────────────────────────────────────── */
 .vscode-noselect {
   user-select: none;
   -webkit-user-select: none;
 }
 
+/* ── Glassmorphism panel ────────────────────────────────────────────────── */
+.glass-panel {
+  background: color-mix(in oklab, hsl(var(--b1)) 78%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ── Glow effects ────────────────────────────────────────────────────────── */
+.glow-primary {
+  box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--p)) 25%, transparent);
+}
+.glow-secondary {
+  box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--s)) 20%, transparent);
+}
+.glow-accent {
+  box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--a)) 20%, transparent);
+}
+
+/* ── Subtle grid background pattern ────────────────────────────────────── */
+.grid-bg-pattern {
+  background-image:
+    linear-gradient(color-mix(in oklab, hsl(var(--bc)) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, hsl(var(--bc)) 3%, transparent) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* ── Active sidebar indicator glow ─────────────────────────────────────── */
+.active-indicator-flow {
+  animation: indicatorGlow 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes indicatorGlow {
+  from { filter: drop-shadow(0 0 1px hsl(var(--p))); }
+  to   { filter: drop-shadow(0 0 5px hsl(var(--p))); }
+}
+
+/* ── Hover lift effect ──────────────────────────────────────────────────── */
+.hover-lift {
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-3px);
+}

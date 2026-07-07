@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { fade, fly } from 'svelte/transition';
 	import { onMount } from 'svelte';
-	import { setUiStyle, uiStyle, uiStyles } from '$lib/ui-style';
 
 	let { open = $bindable(false) } = $props();
 
@@ -280,11 +279,11 @@
 		aria-label="Settings"
 	>
 		<div
-			class="relative w-full max-w-lg bg-base-100 rounded-[2rem] shadow-2xl border border-base-300 flex flex-col max-h-[90vh]"
+			class="relative w-full max-w-lg glass-panel rounded-3xl shadow-2xl border border-base-content/10 flex flex-col max-h-[90vh]"
 			in:fly={{ y: 24, duration: 280 }}
 		>
 			<!-- Header -->
-			<div class="flex items-center justify-between px-8 py-6 border-b border-base-300 shrink-0">
+			<div class="flex items-center justify-between px-8 py-6 border-b border-base-content/8 shrink-0">
 				<h2 class="text-lg font-black uppercase tracking-tight flex items-center gap-3">
 					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
 					Settings
@@ -315,7 +314,7 @@
 						</div>
 					{:else}
 						<!-- Active path display -->
-						<div class="mb-3 px-4 py-3 rounded-xl bg-base-200 border border-base-300 flex items-center gap-2">
+						<div class="mb-3 px-4 py-3 rounded-2xl bg-base-200/60 border border-base-content/8 flex items-center gap-2">
 							<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-40 shrink-0"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
 							<span class="font-mono text-[10px] opacity-60 truncate">Active: {currentLogsRoot || defaultLogsRoot}</span>
 						</div>
@@ -325,11 +324,11 @@
 								type="text"
 								bind:value={logStoragePath}
 								placeholder={defaultLogsRoot || '~/.ohmycode/logs (default)'}
-								class="input input-bordered input-sm flex-1 font-mono text-xs focus:border-primary rounded-xl"
+								class="input input-bordered input-sm flex-1 font-mono text-xs focus:border-primary rounded-2xl bg-base-200/40 border-base-content/10"
 							/>
 							<button
 								type="button"
-								class="btn btn-sm btn-ghost rounded-xl border border-base-300 gap-1.5"
+								class="btn btn-sm btn-ghost rounded-2xl border border-base-content/10 gap-1.5 hover:bg-primary/10 hover:text-primary hover:border-primary/20"
 								onclick={() => openPicker(logStoragePath || '')}
 								title="Browse folders"
 							>
@@ -364,36 +363,7 @@
 					{/if}
 				</section>
 
-				<div class="divider my-0 opacity-30"></div>
-
-				<section>
-					<div class="flex items-center gap-2 mb-4">
-						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M12 3v18"></path><path d="M3 12h18"></path><path d="M5 5l14 14"></path><path d="M19 5L5 19"></path></svg>
-						<span class="text-[10px] font-black uppercase tracking-widest opacity-60">UI Style Preset</span>
-					</div>
-
-					<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-						{#each uiStyles as style}
-							<button
-								type="button"
-								class="text-left p-3 rounded-xl border transition-all bg-base-200/40 hover:bg-primary/10 hover:border-primary/25 {$uiStyle === style.id ? 'border-primary bg-primary/10 text-primary shadow-sm' : 'border-base-300'}"
-								onclick={() => setUiStyle(style.id)}
-							>
-								<div class="flex items-center justify-between gap-2">
-									<span class="text-xs font-black uppercase tracking-wide">{style.label}</span>
-									<span class="flex gap-1">
-										<span class="w-3 h-3 rounded-sm bg-primary"></span>
-										<span class="w-3 h-3 rounded-sm bg-secondary"></span>
-										<span class="w-3 h-3 rounded-sm bg-accent"></span>
-									</span>
-								</div>
-								<p class="text-[10px] opacity-55 mt-1 leading-snug">{style.description}</p>
-							</button>
-						{/each}
-					</div>
-				</section>
-
-				<div class="divider my-0 opacity-30"></div>
+				<div class="h-px bg-base-content/8 my-0"></div>
 
 				<!-- ── Section 3: Git Author ── -->
 				<section>
@@ -407,13 +377,13 @@
 							type="text"
 							bind:value={gitAuthorName}
 							placeholder="Author name"
-							class="input input-bordered input-sm font-mono text-xs focus:border-primary rounded-xl"
+							class="input input-bordered input-sm font-mono text-xs focus:border-primary rounded-2xl bg-base-200/40 border-base-content/10"
 						/>
 						<input
 							type="email"
 							bind:value={gitAuthorEmail}
 							placeholder="Author email"
-							class="input input-bordered input-sm font-mono text-xs focus:border-primary rounded-xl"
+							class="input input-bordered input-sm font-mono text-xs focus:border-primary rounded-2xl bg-base-200/40 border-base-content/10"
 						/>
 					</div>
 
