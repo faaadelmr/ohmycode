@@ -255,6 +255,41 @@
 		return rows;
 	};
 
+	const renderLineContent = (content: string, kind: string) => {
+		if (!content) return '&nbsp;';
+		let html = content
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
+
+		// Use green (success) for added lines, red (error) for removed lines
+		const isAdd = kind === 'add';
+		const bgClass = isAdd ? 'bg-success/25 text-success/80' : 'bg-error/25 text-error/80';
+
+		// Highlight trailing whitespace
+		html = html.replace(/([ \t]+)$/, (match) => {
+			return match
+				.replace(/\t/g, `<span class="${bgClass} select-none font-bold">→\t</span>`)
+				.replace(/ /g, `<span class="${bgClass} select-none font-bold">·</span>`);
+		});
+
+		// Highlight leading whitespace (indentation)
+		html = html.replace(/^([ \t]+)/, (match) => {
+			return match
+				.replace(/\t/g, '<span class="opacity-20 select-none">→\t</span>')
+				.replace(/ /g, '<span class="opacity-25 select-none">·</span>');
+		});
+
+		// Highlight multiple consecutive spaces in the middle of modified lines
+		if (kind !== 'context') {
+			html = html.replace(/ {2,}/g, (match) => {
+				return '<span class="opacity-20 select-none">' + '·'.repeat(match.length) + '</span>';
+			});
+		}
+
+		return html;
+	};
+
 	const createManualComparison = () => {
 		const id = `compare-${Date.now()}`;
 		const index = manualComparisons.length + 1;
@@ -3425,7 +3460,7 @@
 
 							<!-- Diff editor frame -->
 							<div
-								class="vscode-scrollbar relative h-full flex-1 overflow-y-auto bg-black/95 text-[#f8f8f2]"
+								class="vscode-scrollbar relative h-full flex-1 overflow-auto bg-black/95 text-[#f8f8f2]"
 							>
 								{#if loadingEditor}
 									<div class="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
@@ -3436,7 +3471,7 @@
 								<!-- RENDER: SPLIT DIFF VIEW -->
 								{#if diffViewType === 'split'}
 									<div
-										class="flex min-h-full flex-col p-2 font-mono text-[11px] leading-relaxed select-text"
+										class="flex min-h-full min-w-max flex-col p-2 font-mono text-[11px] leading-relaxed select-text"
 									>
 										{#each editingRows as row, rIdx (row.key)}
 											<div
@@ -3458,7 +3493,7 @@
 															>{row.oldNumber}</span
 														>
 														<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-														<span class="w-full truncate whitespace-pre">{row.content}</span>
+														<span class="w-full whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 													</div>
 													<div
 														class="border-r border-white/10 bg-[#1e1e1e] opacity-30 select-none"
@@ -3492,7 +3527,7 @@
 															<span
 																role="button"
 																tabindex="0"
-																class="w-full truncate whitespace-pre"
+																class="w-full whitespace-pre"
 																ondblclick={() => startInlineEdit(item)}
 																onkeydown={(e) => e.key === 'Enter' && startInlineEdit(item)}
 																title="Double click to edit">{row.content}</span
@@ -3509,7 +3544,7 @@
 															>{row.oldNumber}</span
 														>
 														<span class="w-3 shrink-0 select-none"></span>
-														<span class="w-full truncate whitespace-pre">{row.content}</span>
+														<span class="w-full whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 													</div>
 													<div
 														class="flex h-full items-center border-r border-white/10 bg-transparent px-2 opacity-65"
@@ -3519,7 +3554,7 @@
 															>{row.newNumber}</span
 														>
 														<span class="w-3 shrink-0 select-none"></span>
-														<span class="w-full truncate whitespace-pre">{row.content}</span>
+														<span class="w-full whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 													</div>
 												{/if}
 											</div>
@@ -3534,7 +3569,7 @@
 									<!-- RENDER: INLINE DIFF VIEW -->
 								{:else}
 									<div
-										class="flex min-h-full flex-col p-2 font-mono text-[11px] leading-relaxed select-text"
+										class="flex min-h-full min-w-max flex-col p-2 font-mono text-[11px] leading-relaxed select-text"
 									>
 										{#each editingRows as row, rIdx (row.key)}
 											<div
@@ -3554,7 +3589,7 @@
 														>
 														<span class="w-9 shrink-0"></span>
 														<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-														<span class="truncate whitespace-pre">{row.content}</span>
+														<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 													</div>
 												{:else if row.kind === 'add'}
 													<div class="flex w-full items-center bg-[#1b2f1c] py-0.5 text-[#80ff80]">
@@ -3581,7 +3616,7 @@
 															<span
 																role="button"
 																tabindex="0"
-																class="truncate whitespace-pre"
+																class="whitespace-pre"
 																ondblclick={() => startInlineEdit(item)}
 																onkeydown={(e) => e.key === 'Enter' && startInlineEdit(item)}
 																title="Double click to edit">{row.content}</span
@@ -3600,7 +3635,7 @@
 															>{row.newNumber}</span
 														>
 														<span class="w-3 shrink-0"></span>
-														<span class="truncate whitespace-pre">{row.content}</span>
+														<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 													</div>
 												{/if}
 											</div>
@@ -3721,11 +3756,11 @@
 										<!-- Render dynamic diff generated from beforeCode and afterCode -->
 										{@const diffRows = diffManualLines(comp.beforeCode, comp.afterCode)}
 										<div
-											class="vscode-scrollbar h-full overflow-y-auto bg-black/95 text-[#f8f8f2] p-2"
+											class="vscode-scrollbar h-full overflow-auto bg-black/95 text-[#f8f8f2] p-2"
 										>
 											{#if comp.layout === 'split'}
 												<div
-													class="flex min-h-full flex-col font-mono text-[11px] leading-relaxed select-text"
+													class="flex min-h-full min-w-max flex-col font-mono text-[11px] leading-relaxed select-text"
 												>
 													{#each diffRows as row (row.key)}
 														<div
@@ -3740,8 +3775,8 @@
 																		>{row.oldNumber}</span
 																	>
 																	<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-																	<span class="w-full truncate whitespace-pre"
-																		>{row.content}</span
+																	<span class="w-full whitespace-pre"
+																		>{@html renderLineContent(row.content, row.kind)}</span
 																	>
 																</div>
 																<div
@@ -3761,8 +3796,8 @@
 																		>{row.newNumber}</span
 																	>
 																	<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
-																	<span class="w-full truncate whitespace-pre"
-																		>{row.content}</span
+																	<span class="w-full whitespace-pre"
+																		>{@html renderLineContent(row.content, row.kind)}</span
 																	>
 																</div>
 															{:else}
@@ -3775,8 +3810,8 @@
 																		>{row.oldNumber}</span
 																	>
 																	<span class="w-3 shrink-0 select-none"></span>
-																	<span class="w-full truncate whitespace-pre"
-																		>{row.content}</span
+																	<span class="w-full whitespace-pre"
+																		>{@html renderLineContent(row.content, row.kind)}</span
 																	>
 																</div>
 																<div
@@ -3787,8 +3822,8 @@
 																		>{row.newNumber}</span
 																	>
 																	<span class="w-3 shrink-0 select-none"></span>
-																	<span class="w-full truncate whitespace-pre"
-																		>{row.content}</span
+																	<span class="w-full whitespace-pre"
+																		>{@html renderLineContent(row.content, row.kind)}</span
 																	>
 																</div>
 															{/if}
@@ -3802,7 +3837,7 @@
 											{:else}
 												<!-- Inline layout -->
 												<div
-													class="flex min-h-full flex-col font-mono text-[11px] leading-relaxed select-text"
+													class="flex min-h-full min-w-max flex-col font-mono text-[11px] leading-relaxed select-text"
 												>
 													{#each diffRows as row (row.key)}
 														<div
@@ -3818,7 +3853,7 @@
 																	>
 																	<span class="w-9 shrink-0"></span>
 																	<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-																	<span class="truncate whitespace-pre">{row.content}</span>
+																	<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 																</div>
 															{:else if row.kind === 'add'}
 																<div
@@ -3830,7 +3865,7 @@
 																		>{row.newNumber}</span
 																	>
 																	<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
-																	<span class="truncate whitespace-pre">{row.content}</span>
+																	<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 																</div>
 															{:else}
 																<!-- Context -->
@@ -3846,7 +3881,7 @@
 																		>{row.newNumber}</span
 																	>
 																	<span class="w-3 shrink-0"></span>
-																	<span class="truncate whitespace-pre">{row.content}</span>
+																	<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
 																</div>
 															{/if}
 														</div>
