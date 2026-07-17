@@ -20,7 +20,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	const file = url.searchParams.get('file');
 
 	if (!projectPath || !fs.existsSync(projectPath) || !file) {
-		return json({ success: false, error: 'Valid project path and file are required' }, { status: 400 });
+		return json(
+			{ success: false, error: 'Valid project path and file are required' },
+			{ status: 400 }
+		);
 	}
 
 	const fullPath = resolveSafeFilePath(projectPath, file);
@@ -45,7 +48,10 @@ export const PUT: RequestHandler = async ({ request }) => {
 		const { projectPath, file, content } = await request.json();
 
 		if (!projectPath || !fs.existsSync(projectPath) || !file || typeof content !== 'string') {
-			return json({ success: false, error: 'Valid project path, file, and content are required' }, { status: 400 });
+			return json(
+				{ success: false, error: 'Valid project path, file, and content are required' },
+				{ status: 400 }
+			);
 		}
 
 		const fullPath = resolveSafeFilePath(projectPath, file);

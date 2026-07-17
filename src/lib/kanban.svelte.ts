@@ -37,7 +37,8 @@ function stripHeavyFields(task: DutyTask): DutyTask {
 	const { fileDiffs, ...lightTask } = task;
 	return {
 		...lightTask,
-		hasSavedDiffs: lightTask.hasSavedDiffs ?? Boolean(fileDiffs && Object.keys(fileDiffs).length > 0),
+		hasSavedDiffs:
+			lightTask.hasSavedDiffs ?? Boolean(fileDiffs && Object.keys(fileDiffs).length > 0),
 		diffStats: lightTask.diffStats ?? summarizeDiffs(fileDiffs)
 	};
 }

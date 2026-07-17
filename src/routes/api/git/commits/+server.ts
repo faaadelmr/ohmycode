@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ url }) => {
 					maxBuffer: 1024 * 1024
 				});
 				return json({ success: true, diff: diffOutput });
-			} catch (e) {
+			} catch {
 				return json({ success: false, error: 'Failed to fetch commit file diff' }, { status: 500 });
 			}
 		}
@@ -36,12 +36,12 @@ export const GET: RequestHandler = async ({ url }) => {
 					{ timeout: 1000 }
 				);
 
-				const lines = showOutput.split('\n').filter(l => l.trim() !== '');
-				const changedFiles = lines.map(line => {
+				const lines = showOutput.split('\n').filter((l) => l.trim() !== '');
+				const changedFiles = lines.map((line) => {
 					const parts = line.split('\t');
 					const status = parts[0]; // M, A, D, R etc.
 					const filePath = parts[1];
-					
+
 					const getType = (code: string) => {
 						if (code.startsWith('A')) return 'Added';
 						if (code.startsWith('D')) return 'Deleted';
@@ -58,8 +58,11 @@ export const GET: RequestHandler = async ({ url }) => {
 				});
 
 				return json({ success: true, files: changedFiles });
-			} catch (e) {
-				return json({ success: false, error: 'Failed to fetch commit changed files' }, { status: 500 });
+			} catch {
+				return json(
+					{ success: false, error: 'Failed to fetch commit changed files' },
+					{ status: 500 }
+				);
 			}
 		}
 
@@ -70,10 +73,10 @@ export const GET: RequestHandler = async ({ url }) => {
 			{ timeout: 1500 }
 		);
 
-		const lines = logOutput.split('\n').filter(l => l.trim() !== '');
-		const commits = lines.map(line => {
+		const lines = logOutput.split('\n').filter((l) => l.trim() !== '');
+		const commits = lines.map((line) => {
 			const [hash, author, date, subject, refs] = line.split('|');
-			
+
 			// Format branch/reference tags nicely (e.g. removes surrounding parentheses)
 			const formattedRefs = refs ? refs.trim().replace(/^\((.*)\)$/, '$1') : '';
 

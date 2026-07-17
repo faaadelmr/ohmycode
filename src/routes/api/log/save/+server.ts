@@ -3,11 +3,7 @@ import type { RequestHandler } from './$types';
 import { getLogsRoot, getSettings } from '$lib/server/settings';
 import fs from 'fs';
 import path from 'path';
-import {
-	getCurrentBranch,
-	getLatestCommitField,
-	readGitConfigValue
-} from '$lib/server/git';
+import { getCurrentBranch, getLatestCommitField, readGitConfigValue } from '$lib/server/git';
 
 /**
  * Derive the next sequential folder name for a given project.
@@ -41,6 +37,7 @@ function buildFolderName(projectLogsDir: string, title: string): string {
 	// Strip characters that are illegal on Windows/macOS/Linux filesystems
 	const safeTitle =
 		title
+			// eslint-disable-next-line no-control-regex
 			.replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
 			.replace(/\s+/g, ' ')
 			.trim()
@@ -59,7 +56,7 @@ function resolveSafeChildPath(root: string, relativeFile: string) {
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
-		const { task, projectPath, includeGitCommit } = await request.json();
+		const { task, projectPath } = await request.json();
 
 		if (!projectPath || !fs.existsSync(projectPath)) {
 			return json({ success: false, error: 'Valid project path is required' }, { status: 400 });
@@ -91,12 +88,17 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (fs.existsSync(projectPath)) {
 			try {
 				branchName = getCurrentBranch(projectPath);
-			} catch (e) {}
+			} catch {
+				/* default to main */
+			}
 
 			try {
 				const settings = getSettings();
-				authorName = settings.gitAuthorName?.trim() || readGitConfigValue(projectPath, 'user.name') || 'N/A';
-			} catch (e) {}
+				authorName =
+					settings.gitAuthorName?.trim() || readGitConfigValue(projectPath, 'user.name') || 'N/A';
+			} catch {
+				/* default to N/A */
+			}
 
 			try {
 				commitHash = getLatestCommitField(projectPath, '%h');
@@ -104,20 +106,27 @@ export const POST: RequestHandler = async ({ request }) => {
 				if (rawDate) {
 					commitDate = rawDate;
 				}
-			} catch (e) {}
+			} catch {
+				/* default to current date */
+			}
 		}
 
 		const folderMatch = folderName.match(/^(\d+)\.\s*(.*)$/);
 		const seqNum = folderMatch ? folderMatch[1] : '01';
 		const taskTitle = folderMatch ? folderMatch[2] : task.title;
 
-		const filesLines = task.files && task.files.length > 0
-			? task.files.map((f: string) => `  - ${f}`).join('\n')
-			: '  - None';
+		const filesLines =
+			task.files && task.files.length > 0
+				? task.files.map((f: string) => `  - ${f}`).join('\n')
+				: '  - None';
 
-		const notesLines = task.notes && task.notes.trim()
-			? task.notes.split('\n').map((line: string) => `  - ${line.trim()}`).join('\n')
-			: `  - ${task.description || 'No notes provided.'}`;
+		const notesLines =
+			task.notes && task.notes.trim()
+				? task.notes
+						.split('\n')
+						.map((line: string) => `  - ${line.trim()}`)
+						.join('\n')
+				: `  - ${task.description || 'No notes provided.'}`;
 
 		const content = `
 # ${seqNum}. ${taskTitle}

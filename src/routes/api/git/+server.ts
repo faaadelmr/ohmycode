@@ -43,8 +43,9 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		const lines = statusOutput.split('\n').filter((line) => line.trim() !== '');
 
-		const stagedFiles: any[] = [];
-		const unstagedFiles: any[] = [];
+		type GitFileEntry = { file: string; status: string; type: string; isStaged: boolean };
+		const stagedFiles: GitFileEntry[] = [];
+		const unstagedFiles: GitFileEntry[] = [];
 
 		lines.forEach((line) => {
 			const x = line[0]; // Staged
@@ -134,17 +135,21 @@ export const GET: RequestHandler = async ({ url }) => {
 							diff += `\n--- ${relPath} ---\n`;
 							diff += dLines.map((l) => `+${l}`).join('\n') + '\n';
 							additions += dLines.length;
-						} catch (e) {}
+						} catch {
+							/* skip unreadable file */
+						}
 					}
 				}
-			} catch (e) {}
+			} catch {
+				/* skip unreadable directory */
+			}
 			return { diff, additions };
 		};
 
-		const processSuggestion = (change: any) => {
+		const processSuggestion = (change: GitFileEntry) => {
 			let functions: string[] = [];
 			let diffData = '';
-			let diffStats = { additions: 0, deletions: 0 };
+			const diffStats = { additions: 0, deletions: 0 };
 
 			const fullPath = path.resolve(targetPath, change.file);
 
@@ -254,9 +259,13 @@ export const GET: RequestHandler = async ({ url }) => {
 									const fMatch = l.match(/(?:function\s+|const\s+)(\w+)\s*=?\s*(?:\(|=)/);
 									if (fMatch && fMatch[1]) functions.push(fMatch[1]);
 								});
-						} catch (e) {}
+						} catch {
+							/* skip unreadable diff */
+						}
 					}
-				} catch (e) {}
+				} catch {
+					/* skip processing error */
+				}
 			}
 
 			return {
@@ -289,12 +298,16 @@ export const GET: RequestHandler = async ({ url }) => {
 		let recentCommits: string[] = [];
 		try {
 			recentCommits = getRecentCommitLines(targetPath, 3);
-		} catch (e) {}
+		} catch {
+			/* use empty list on failure */
+		}
 
 		let activeBranch = 'main';
 		try {
 			activeBranch = getCurrentBranch(targetPath);
-		} catch (e) {}
+		} catch {
+			/* default to main */
+		}
 
 		return json({
 			success: true,
@@ -329,12 +342,13 @@ export const PUT: RequestHandler = async ({ request }) => {
 				else unstageFiles(projectPath, [file]);
 			}
 			return json({ success: true });
-		} catch (err: any) {
+		} catch (err) {
+			const e = err as { stdout?: Buffer; message?: string };
 			return json(
 				{
 					success: false,
 					error: `Git command failed`,
-					raw: err.stdout?.toString() || err.message
+					raw: e.stdout?.toString() || e.message
 				},
 				{ status: 400 }
 			);
@@ -374,12 +388,13 @@ export const POST: RequestHandler = async ({ request }) => {
 					);
 				}
 			}
-		} catch (err: any) {
+		} catch (err) {
+			const e = err as { stdout?: Buffer; stderr?: Buffer; message?: string };
 			return json(
 				{
 					success: false,
 					error: 'Git staging failed.',
-					raw: err.stdout?.toString() || err.stderr?.toString() || err.message
+					raw: e.stdout?.toString() || e.stderr?.toString() || e.message
 				},
 				{ status: 400 }
 			);
@@ -405,13 +420,14 @@ export const POST: RequestHandler = async ({ request }) => {
 			const commitHash = getShortHead(projectPath);
 			fs.unlinkSync(tempMsgFile);
 			return json({ success: true, output: commitOutput, commitHash });
-		} catch (commitErr: any) {
+		} catch (commitErr) {
+			const e = commitErr as { stdout?: Buffer; message?: string };
 			if (fs.existsSync(tempMsgFile)) fs.unlinkSync(tempMsgFile);
 			return json(
 				{
 					success: false,
 					error: 'Git commit failed.',
-					raw: commitErr.stdout?.toString() || commitErr.message
+					raw: e.stdout?.toString() || e.message
 				},
 				{ status: 400 }
 			);
@@ -447,12 +463,13 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		try {
 			const output = runGit(projectPath, ['reset', '--soft', 'HEAD~1']);
 			return json({ success: true, output });
-		} catch (err: any) {
+		} catch (err) {
+			const e = err as { stdout?: Buffer; message?: string };
 			return json(
 				{
 					success: false,
 					error: 'Failed to undo commit.',
-					raw: err.stdout?.toString() || err.message
+					raw: e.stdout?.toString() || e.message
 				},
 				{ status: 400 }
 			);

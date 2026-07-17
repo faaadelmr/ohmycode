@@ -34,7 +34,9 @@ export function readGitConfigValue(projectPath: string, key: string) {
 		try {
 			const value = command().trim();
 			if (value) return value;
-		} catch {}
+		} catch {
+			/* try next command */
+		}
 	}
 
 	return '';
@@ -97,11 +99,20 @@ export function getCurrentBranch(projectPath: string) {
 	return runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']).trim();
 }
 
-export function getLatestCommitField(projectPath: string, format: string, extraArgs: string[] = []) {
+export function getLatestCommitField(
+	projectPath: string,
+	format: string,
+	extraArgs: string[] = []
+) {
 	return runGit(projectPath, ['log', '-n', '1', `--format=${format}`, ...extraArgs]).trim();
 }
 
-export function commit(projectPath: string, messageFile: string, files: string[], env?: NodeJS.ProcessEnv) {
+export function commit(
+	projectPath: string,
+	messageFile: string,
+	files: string[],
+	env?: NodeJS.ProcessEnv
+) {
 	const args = ['commit', '--no-verify', '-F', messageFile];
 	if (files.length > 0) args.push('--', ...files);
 	return runGit(projectPath, args, { env });

@@ -6,14 +6,17 @@
 	const tasks = $derived([...kanbanStore.tasks].sort((a, b) => b.createdAt - a.createdAt));
 </script>
 
-<div class="max-w-4xl mx-auto">
-	<div class="flex items-center justify-between mb-8 border-b border-base-300 pb-4">
-		<h3 class="font-black uppercase tracking-widest text-sm opacity-40">Recent Log History</h3>
+<div class="mx-auto max-w-4xl">
+	<div class="mb-8 flex items-center justify-between border-b border-base-300 pb-4">
+		<h3 class="text-sm font-black tracking-widest uppercase opacity-40">Recent Log History</h3>
 		<span class="badge badge-lg font-black">{tasks.length} Duties logged</span>
 	</div>
 
 	{#if tasks.length === 0}
-		<div class="text-center py-20 opacity-30 border-2 border-dashed border-base-300 rounded-3xl" in:fade>
+		<div
+			class="rounded-3xl border-2 border-dashed border-base-300 py-20 text-center opacity-30"
+			in:fade
+		>
 			<p class="text-lg font-bold">No duties logged yet today.</p>
 			<p class="text-xs">Use the form above to record your project activity.</p>
 		</div>

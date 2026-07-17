@@ -35,8 +35,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const { logStoragePath, gitAuthorName, gitAuthorEmail, updateGlobalGitAuthor } = body;
 
 		const hasLogStoragePath = Object.prototype.hasOwnProperty.call(body, 'logStoragePath');
-		const nextLogStoragePath =
-			typeof logStoragePath === 'string' ? logStoragePath.trim() : '';
+		const nextLogStoragePath = typeof logStoragePath === 'string' ? logStoragePath.trim() : '';
 
 		// Validate path if provided
 		if (hasLogStoragePath && nextLogStoragePath) {
@@ -72,7 +71,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const shouldUpdateGlobal =
 			typeof updateGlobalGitAuthor === 'boolean'
 				? updateGlobalGitAuthor
-				: current.updateGlobalGitAuthor ?? false;
+				: (current.updateGlobalGitAuthor ?? false);
 
 		if (hasGitAuthorName || hasGitAuthorEmail || hasUpdateGlobalGitAuthor) {
 			nextSettings = {

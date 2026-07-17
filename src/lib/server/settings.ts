@@ -16,7 +16,9 @@ export function getSettings(): AppSettings {
 		if (fs.existsSync(CONFIG_PATH)) {
 			return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 		}
-	} catch {}
+	} catch {
+		/* return default empty settings if file is missing or corrupt */
+	}
 	return {};
 }
 

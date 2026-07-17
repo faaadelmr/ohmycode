@@ -17,8 +17,8 @@ export const GET: RequestHandler = async ({ url }) => {
 		// List only directories
 		const entries = fs.readdirSync(targetPath, { withFileTypes: true });
 		const directories = entries
-			.filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-			.map(entry => entry.name)
+			.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+			.map((entry) => entry.name)
 			.sort((a, b) => a.localeCompare(b));
 
 		return json({
@@ -28,11 +28,11 @@ export const GET: RequestHandler = async ({ url }) => {
 			directories,
 			sep: path.sep // Return OS separator (\ for win, / for others)
 		});
-	} catch (error) {
-		return json({ 
-			success: false, 
+	} catch {
+		return json({
+			success: false,
 			error: 'Access Denied or Folder Not Found',
-			currentPath: targetPath 
+			currentPath: targetPath
 		});
 	}
 };

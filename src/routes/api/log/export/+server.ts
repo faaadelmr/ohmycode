@@ -41,7 +41,8 @@ function countFiles(dir: string): { logs: number; files: number } {
 	return { logs, files };
 }
 
-function stripHeavyTaskFields(task: any) {
+function stripHeavyTaskFields(task: Record<string, unknown>) {
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	const { fileDiffs, ...lightTask } = task;
 	return lightTask;
 }

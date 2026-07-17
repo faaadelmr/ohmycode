@@ -1,6 +1,6 @@
 ---
 name: finish-work
-description: "Finish Work - Pre-Commit Checklist"
+description: 'Finish Work - Pre-Commit Checklist'
 ---
 
 # Finish Work - Pre-Commit Checklist
@@ -32,6 +32,7 @@ pnpm test
 ### 2. Code-Spec Sync
 
 **Code-Spec Docs**:
+
 - [ ] Does `.trellis/spec/backend/` need updates?
   - New patterns, new modules, new conventions
 - [ ] Does `.trellis/spec/frontend/` need updates?
@@ -39,7 +40,8 @@ pnpm test
 - [ ] Does `.trellis/spec/guides/` need updates?
   - New cross-layer flows, lessons from bugs
 
-**Key Question**: 
+**Key Question**:
+
 > "If I fixed a bug or discovered something non-obvious, should I document it so future me (or others) won't hit the same issue?"
 
 If YES -> Update the relevant code-spec doc.
@@ -110,14 +112,14 @@ git diff --name-only
 
 ## Common Oversights
 
-| Oversight | Consequence | Check |
-|-----------|-------------|-------|
-| Code-spec docs not updated | Others don't know the change | Check .trellis/spec/ |
+| Oversight                  | Consequence                                   | Check                                         |
+| -------------------------- | --------------------------------------------- | --------------------------------------------- |
+| Code-spec docs not updated | Others don't know the change                  | Check .trellis/spec/                          |
 | Spec text is abstract only | Easy regressions in infra/cross-layer changes | Require signature/contract/matrix/cases/tests |
-| Migration not created | Schema out of sync | Check db/migrations/ |
-| Types not synced | Runtime errors | Check shared types |
-| Tests not updated | False confidence | Run full test suite |
-| Console.log left in | Noisy production logs | Search for console.log |
+| Migration not created      | Schema out of sync                            | Check db/migrations/                          |
+| Types not synced           | Runtime errors                                | Check shared types                            |
+| Tests not updated          | False confidence                              | Run full test suite                           |
+| Console.log left in        | Noisy production logs                         | Search for console.log                        |
 
 ---
 
@@ -128,7 +130,7 @@ Development Flow:
   Write code -> Test -> /finish-work -> git commit -> /record-session
                           |                              |
                    Ensure completeness              Record progress
-                   
+
 Debug Flow:
   Hit bug -> Fix -> /break-loop -> Knowledge capture
                        |

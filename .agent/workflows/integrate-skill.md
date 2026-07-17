@@ -1,6 +1,6 @@
 ---
 name: integrate-skill
-description: "Integrate Skill into Project Guidelines"
+description: 'Integrate Skill into Project Guidelines'
 ---
 
 # Integrate Skill into Project Guidelines
@@ -14,6 +14,7 @@ Adapt and integrate a reusable skill into your project's development guidelines 
 ```
 
 **Examples**:
+
 ```
 /integrate-skill frontend-design
 /integrate-skill mcp-builder
@@ -34,6 +35,7 @@ Adapt and integrate a reusable skill into your project's development guidelines 
 ### 1. Read Skill Content
 
 Locate and read the skill instructions:
+
 - `.agent/workflows/<workflow-name>.md` in the repository
 - Skill list in `AGENTS.md` (when available in current context)
 
@@ -43,16 +45,17 @@ If the skill cannot be found, ask the user for the source path or repository.
 
 Based on skill type, determine which guidelines to update:
 
-| Skill Category | Integration Target |
-|----------------|-------------------|
-| UI/Frontend (`frontend-design`, `web-artifacts-builder`) | `.trellis/spec/frontend/` |
-| Backend/API (`mcp-builder`) | `.trellis/spec/backend/` |
-| Documentation (`doc-coauthoring`, `docx`, `pdf`) | `.trellis/` or create dedicated guidelines |
-| Testing (`webapp-testing`) | `.trellis/spec/frontend/` (E2E) |
+| Skill Category                                           | Integration Target                         |
+| -------------------------------------------------------- | ------------------------------------------ |
+| UI/Frontend (`frontend-design`, `web-artifacts-builder`) | `.trellis/spec/frontend/`                  |
+| Backend/API (`mcp-builder`)                              | `.trellis/spec/backend/`                   |
+| Documentation (`doc-coauthoring`, `docx`, `pdf`)         | `.trellis/` or create dedicated guidelines |
+| Testing (`webapp-testing`)                               | `.trellis/spec/frontend/` (E2E)            |
 
 ### 3. Analyze Skill Content
 
 Extract from the skill:
+
 - **Core concepts**: How the skill works and key concepts
 - **Best practices**: Recommended approaches
 - **Code patterns**: Reusable code templates
@@ -66,23 +69,29 @@ Add a new section to the corresponding `doc.md`:
 
 ```markdown
 @@@section:skill-<skill-name>
+
 ## # <Skill Name> Integration Guide
 
 ### Overview
+
 [Core functionality and use cases of the skill]
 
 ### Project Adaptation
+
 [How to use this skill in the current project]
 
 ### Usage Steps
+
 1. [Step 1]
 2. [Step 2]
 
 ### Caveats
+
 - [Project-specific constraints]
 - [Differences from default behavior]
 
 ### Reference Examples
+
 See `examples/skills/<skill-name>/`
 
 @@@/section:skill-<skill-name>
@@ -104,6 +113,7 @@ See `examples/skills/<skill-name>/`
 ```
 
 **File naming conventions**:
+
 - Code files: `<name>.<ext>.template` (e.g., `component.tsx.template`)
 - Config files: `<name>.config.template` (e.g., `tailwind.config.template`)
 - Documentation: `README.md` (normal suffix)
@@ -123,22 +133,23 @@ Add to the Quick Navigation table in `index.md`:
 ## Skill Integration Report: `<skill-name>`
 
 ### # Overview
+
 - **Skill description**: [Functionality description]
 - **Integration target**: `.trellis/spec/{target}/`
 
 ### # Tech Stack Compatibility
 
 | Skill Requirement | Project Status | Compatibility |
-|-------------------|----------------|---------------|
-| [Tech 1] | [Project tech] | [OK]/[!]/[X] |
+| ----------------- | -------------- | ------------- |
+| [Tech 1]          | [Project tech] | [OK]/[!]/[X]  |
 
 ### # Integration Locations
 
-| Type | Path |
-|------|------|
+| Type           | Path                                                      |
+| -------------- | --------------------------------------------------------- |
 | Guidelines doc | `.trellis/spec/{target}/doc.md` (section: `skill-<name>`) |
-| Code examples | `.trellis/spec/{target}/examples/skills/<name>/` |
-| Index update | `.trellis/spec/{target}/index.md` |
+| Code examples  | `.trellis/spec/{target}/examples/skills/<name>/`          |
+| Index update   | `.trellis/spec/{target}/index.md`                         |
 
 > `{target}` = `frontend` or `backend`
 
@@ -176,12 +187,12 @@ If this skill is frequently used, create a shortcut skill:
 
 ## Common Skill Integration Reference
 
-| Skill | Integration Target | Examples Directory |
-|-------|-------------------|-------------------|
-| `frontend-design` | `frontend` | `examples/skills/frontend-design/` |
-| `mcp-builder` | `backend` | `examples/skills/mcp-builder/` |
-| `webapp-testing` | `frontend` | `examples/skills/webapp-testing/` |
-| `doc-coauthoring` | `.trellis/` | N/A (documentation workflow only) |
+| Skill             | Integration Target | Examples Directory                 |
+| ----------------- | ------------------ | ---------------------------------- |
+| `frontend-design` | `frontend`         | `examples/skills/frontend-design/` |
+| `mcp-builder`     | `backend`          | `examples/skills/mcp-builder/`     |
+| `webapp-testing`  | `frontend`         | `examples/skills/webapp-testing/`  |
+| `doc-coauthoring` | `.trellis/`        | N/A (documentation workflow only)  |
 
 ## Example: Integrating `mcp-builder` Skill
 
@@ -204,17 +215,21 @@ If this skill is frequently used, create a shortcut skill:
 
 ```markdown
 @@@section:skill-mcp-builder
+
 ## # MCP Server Development Guide
 
 ### Overview
+
 Create LLM-callable tool services using MCP (Model Context Protocol).
 
 ### Project Adaptation
+
 - Place services in a dedicated directory
 - Follow existing TypeScript and type definition conventions
 - Use project's logging system
 
 ### Reference Examples
+
 See `examples/skills/mcp-builder/`
 
 @@@/section:skill-mcp-builder

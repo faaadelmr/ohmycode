@@ -19,12 +19,14 @@ function summarizeDiffs(fileDiffs?: Record<string, string>) {
 	return stats;
 }
 
-function stripHeavyTaskFields(task: any) {
+function stripHeavyTaskFields(task: Record<string, unknown>) {
 	const { fileDiffs, ...lightTask } = task;
 	return {
 		...lightTask,
-		hasSavedDiffs: lightTask.hasSavedDiffs ?? Boolean(fileDiffs && Object.keys(fileDiffs).length > 0),
-		diffStats: lightTask.diffStats ?? summarizeDiffs(fileDiffs)
+		hasSavedDiffs:
+			(lightTask.hasSavedDiffs as boolean) ??
+			Boolean(fileDiffs && Object.keys(fileDiffs as object).length > 0),
+		diffStats: lightTask.diffStats ?? summarizeDiffs(fileDiffs as Record<string, string>)
 	};
 }
 
@@ -113,7 +115,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			restoredFiles++;
 		}
 
-		const tasks = manifest.tasks.map(stripHeavyTaskFields);
+		const tasks = (manifest.tasks as Record<string, unknown>[]).map(stripHeavyTaskFields);
 
 		return json({
 			success: true,

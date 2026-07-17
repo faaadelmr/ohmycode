@@ -1,103 +1,109 @@
-@import "tailwindcss";
-@import "daisyui/themes";
+@import 'tailwindcss';
+@import 'daisyui/themes';
 
-@plugin "daisyui";
+@plugin 'daisyui';
 
 /* Explicitly enable all themes for DaisyUI 5 / Tailwind 4 */
 @theme {
-  --theme-light: "light";
-  --theme-dark: "dark";
-  --theme-cupcake: "cupcake";
-  --theme-bumblebee: "bumblebee";
-  --theme-emerald: "emerald";
-  --theme-corporate: "corporate";
-  --theme-synthwave: "synthwave";
-  --theme-retro: "retro";
-  --theme-cyberpunk: "cyberpunk";
-  --theme-neo-brutalism: "neo-brutalism";
-  --theme-valentine: "valentine";
-  --theme-halloween: "halloween";
-  --theme-garden: "garden";
-  --theme-forest: "forest";
-  --theme-aqua: "aqua";
-  --theme-lofi: "lofi";
-  --theme-pastel: "pastel";
-  --theme-fantasy: "fantasy";
-  --theme-wireframe: "wireframe";
-  --theme-black: "black";
-  --theme-luxury: "luxury";
-  --theme-dracula: "dracula";
-  --theme-cmyk: "cmyk";
-  --theme-autumn: "autumn";
-  --theme-business: "business";
-  --theme-acid: "acid";
-  --theme-lemonade: "lemonade";
-  --theme-night: "night";
-  --theme-coffee: "coffee";
-  --theme-winter: "winter";
-  --theme-dim: "dim";
-  --theme-nord: "nord";
-  --theme-sunset: "sunset";
-  --theme-caramellatte: "caramellatte";
-  --theme-abyss: "abyss";
-  --theme-silk: "silk";
+	--theme-light: 'light';
+	--theme-dark: 'dark';
+	--theme-cupcake: 'cupcake';
+	--theme-bumblebee: 'bumblebee';
+	--theme-emerald: 'emerald';
+	--theme-corporate: 'corporate';
+	--theme-synthwave: 'synthwave';
+	--theme-retro: 'retro';
+	--theme-cyberpunk: 'cyberpunk';
+	--theme-neo-brutalism: 'neo-brutalism';
+	--theme-valentine: 'valentine';
+	--theme-halloween: 'halloween';
+	--theme-garden: 'garden';
+	--theme-forest: 'forest';
+	--theme-aqua: 'aqua';
+	--theme-lofi: 'lofi';
+	--theme-pastel: 'pastel';
+	--theme-fantasy: 'fantasy';
+	--theme-wireframe: 'wireframe';
+	--theme-black: 'black';
+	--theme-luxury: 'luxury';
+	--theme-dracula: 'dracula';
+	--theme-cmyk: 'cmyk';
+	--theme-autumn: 'autumn';
+	--theme-business: 'business';
+	--theme-acid: 'acid';
+	--theme-lemonade: 'lemonade';
+	--theme-night: 'night';
+	--theme-coffee: 'coffee';
+	--theme-winter: 'winter';
+	--theme-dim: 'dim';
+	--theme-nord: 'nord';
+	--theme-sunset: 'sunset';
+	--theme-caramellatte: 'caramellatte';
+	--theme-abyss: 'abyss';
+	--theme-silk: 'silk';
 }
 
 /* ── Override neo-brutalism brutish defaults → soft modern UI ───────────── */
 [data-theme='neo-brutalism'] {
-  color-scheme: light;
-  --color-base-100: oklch(99% 0 0);
-  --color-base-200: oklch(94% 0.085 102);
-  --color-base-300: oklch(89% 0.13 212);
-  --color-base-content: oklch(0% 0 0);
-  --color-primary: oklch(68% 0.31 350);
-  --color-primary-content: oklch(0% 0 0);
-  --color-secondary: oklch(82% 0.17 215);
-  --color-secondary-content: oklch(0% 0 0);
-  --color-accent: oklch(91% 0.22 101);
-  --color-accent-content: oklch(0% 0 0);
-  --color-neutral: oklch(0% 0 0);
-  --color-neutral-content: oklch(100% 0 0);
-  --color-info: oklch(74% 0.17 232);
-  --color-info-content: oklch(0% 0 0);
-  --color-success: oklch(82% 0.24 142);
-  --color-success-content: oklch(0% 0 0);
-  --color-warning: oklch(90% 0.22 92);
-  --color-warning-content: oklch(0% 0 0);
-  --color-error: oklch(66% 0.28 25);
-  --color-error-content: oklch(100% 0 0);
-  /* Override brutal values → soft modern look */
-  --radius-selector: 0.5rem;
-  --radius-field: 0.625rem;
-  --radius-box: 0.875rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
+	color-scheme: light;
+	--color-base-100: oklch(99% 0 0);
+	--color-base-200: oklch(94% 0.085 102);
+	--color-base-300: oklch(89% 0.13 212);
+	--color-base-content: oklch(0% 0 0);
+	--color-primary: oklch(68% 0.31 350);
+	--color-primary-content: oklch(0% 0 0);
+	--color-secondary: oklch(82% 0.17 215);
+	--color-secondary-content: oklch(0% 0 0);
+	--color-accent: oklch(91% 0.22 101);
+	--color-accent-content: oklch(0% 0 0);
+	--color-neutral: oklch(0% 0 0);
+	--color-neutral-content: oklch(100% 0 0);
+	--color-info: oklch(74% 0.17 232);
+	--color-info-content: oklch(0% 0 0);
+	--color-success: oklch(82% 0.24 142);
+	--color-success-content: oklch(0% 0 0);
+	--color-warning: oklch(90% 0.22 92);
+	--color-warning-content: oklch(0% 0 0);
+	--color-error: oklch(66% 0.28 25);
+	--color-error-content: oklch(100% 0 0);
+	/* Override brutal values → soft modern look */
+	--radius-selector: 0.5rem;
+	--radius-field: 0.625rem;
+	--radius-box: 0.875rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
 }
 
 /* ── Global design tokens ───────────────────────────────────────────────── */
 :root {
-  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  --omc-radius-xs: 0.375rem;
-  --omc-radius-sm: 0.5rem;
-  --omc-radius-md: 0.75rem;
-  --omc-radius-lg: 1rem;
-  --omc-radius-xl: 1.25rem;
-  --omc-border-width: 1px;
-  --omc-shadow-panel: 0 14px 40px rgba(0, 0, 0, 0.08);
-  --omc-shadow-control: 0 2px 8px rgba(0, 0, 0, 0.06);
+	--font-family: 'Inter', system-ui, -apple-system, sans-serif;
+	--omc-radius-xs: 0.375rem;
+	--omc-radius-sm: 0.5rem;
+	--omc-radius-md: 0.75rem;
+	--omc-radius-lg: 1rem;
+	--omc-radius-xl: 1.25rem;
+	--omc-border-width: 1px;
+	--omc-shadow-panel: 0 14px 40px rgba(0, 0, 0, 0.08);
+	--omc-shadow-control: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 /* ── Typography ─────────────────────────────────────────────────────────── */
 body,
 .vscode-font {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-family:
+		'Inter',
+		system-ui,
+		-apple-system,
+		BlinkMacSystemFont,
+		'Segoe UI',
+		sans-serif;
 }
 
 .vscode-font-mono {
-  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+	font-family: Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
 /* ── Global border-radius normalization ─────────────────────────────────── */
@@ -107,7 +113,7 @@ body,
 [class*='rounded-2xl'],
 [class*='rounded-[2rem]'],
 [class*='rounded-3xl'] {
-  border-radius: var(--omc-radius-xl) !important;
+	border-radius: var(--omc-radius-xl) !important;
 }
 
 /* Interactive controls */
@@ -119,7 +125,7 @@ body,
 [class*='rounded-xl'],
 [class*='rounded-lg'],
 [class*='rounded-md'] {
-  border-radius: var(--omc-radius-md) !important;
+	border-radius: var(--omc-radius-md) !important;
 }
 
 /* ── Global border-width normalization ───────────────────────────────────── */
@@ -137,12 +143,12 @@ main,
 [class*='border-primary'],
 [class*='border-secondary'],
 [class*='border-accent'] {
-  border-width: var(--omc-border-width) !important;
+	border-width: var(--omc-border-width) !important;
 }
 
 /* Dashed borders: keep dashed but thin */
 [class*='border-dashed'] {
-  border-width: 1px !important;
+	border-width: 1px !important;
 }
 
 /* ── Shadow normalization ───────────────────────────────────────────────── */
@@ -151,92 +157,98 @@ main,
 [class*='shadow-2xl'],
 [class*='shadow-xl'],
 [class*='shadow-md'] {
-  box-shadow: var(--omc-shadow-panel) !important;
+	box-shadow: var(--omc-shadow-panel) !important;
 }
 
 /* ── Button micro-interactions ──────────────────────────────────────────── */
 .btn {
-  box-shadow: var(--omc-shadow-control) !important;
-  transition:
-    transform 140ms ease,
-    box-shadow 140ms ease,
-    background-color 140ms ease,
-    border-color 140ms ease;
+	box-shadow: var(--omc-shadow-control) !important;
+	transition:
+		transform 140ms ease,
+		box-shadow 140ms ease,
+		background-color 140ms ease,
+		border-color 140ms ease;
 }
 
 .btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10) !important;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1) !important;
 }
 
 /* ── Viewport height helper ─────────────────────────────────────────────── */
 .min-h-screen-vh {
-  min-height: 100vh; /* Fallback */
-  min-height: calc(var(--vh, 1vh) * 100);
+	min-height: 100vh; /* Fallback */
+	min-height: calc(var(--vh, 1vh) * 100);
 }
 
 /* ── VS Code premium scrollbar ──────────────────────────────────────────── */
 .vscode-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+	width: 6px;
+	height: 6px;
 }
 .vscode-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+	background: transparent;
 }
 .vscode-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(120, 120, 120, 0.18);
-  border-radius: 99px;
+	background: rgba(120, 120, 120, 0.18);
+	border-radius: 99px;
 }
 .vscode-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(120, 120, 120, 0.35);
+	background: rgba(120, 120, 120, 0.35);
 }
 
 /* ── No text-select in panels ───────────────────────────────────────────── */
 .vscode-noselect {
-  user-select: none;
-  -webkit-user-select: none;
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 /* ── Glassmorphism panel ────────────────────────────────────────────────── */
 .glass-panel {
-  background: color-mix(in oklab, hsl(var(--b1)) 78%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+	background: color-mix(in oklab, hsl(var(--b1)) 78%, transparent);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
 }
 
 /* ── Glow effects ────────────────────────────────────────────────────────── */
 .glow-primary {
-  box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--p)) 25%, transparent);
+	box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--p)) 25%, transparent);
 }
 .glow-secondary {
-  box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--s)) 20%, transparent);
+	box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--s)) 20%, transparent);
 }
 .glow-accent {
-  box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--a)) 20%, transparent);
+	box-shadow: 0 0 20px -4px color-mix(in oklab, hsl(var(--a)) 20%, transparent);
 }
 
 /* ── Subtle grid background pattern ────────────────────────────────────── */
 .grid-bg-pattern {
-  background-image:
-    linear-gradient(color-mix(in oklab, hsl(var(--bc)) 3%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklab, hsl(var(--bc)) 3%, transparent) 1px, transparent 1px);
-  background-size: 20px 20px;
+	background-image:
+		linear-gradient(color-mix(in oklab, hsl(var(--bc)) 3%, transparent) 1px, transparent 1px),
+		linear-gradient(90deg, color-mix(in oklab, hsl(var(--bc)) 3%, transparent) 1px, transparent 1px);
+	background-size: 20px 20px;
 }
 
 /* ── Active sidebar indicator glow ─────────────────────────────────────── */
 .active-indicator-flow {
-  animation: indicatorGlow 2.5s ease-in-out infinite alternate;
+	animation: indicatorGlow 2.5s ease-in-out infinite alternate;
 }
 
 @keyframes indicatorGlow {
-  from { filter: drop-shadow(0 0 1px hsl(var(--p))); }
-  to   { filter: drop-shadow(0 0 5px hsl(var(--p))); }
+	from {
+		filter: drop-shadow(0 0 1px hsl(var(--p)));
+	}
+	to {
+		filter: drop-shadow(0 0 5px hsl(var(--p)));
+	}
 }
 
 /* ── Hover lift effect ──────────────────────────────────────────────────── */
 .hover-lift {
-  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+	transition:
+		transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+		box-shadow 0.22s ease;
 }
 .hover-lift:hover {
-  transform: translateY(-3px);
+	transform: translateY(-3px);
 }

@@ -1,11 +1,12 @@
 ---
 name: check-backend
-description: "Check if the code you just wrote follows the backend development guidelines."
+description: 'Check if the code you just wrote follows the backend development guidelines.'
 ---
 
 Check if the code you just wrote follows the backend development guidelines.
 
 Execute these steps:
+
 1. Run `git status` to see modified files
 2. Read `.trellis/spec/backend/index.md` to understand which guidelines apply
 3. Based on what you changed, read the relevant guideline files:

@@ -1,6 +1,6 @@
 ---
 name: start
-description: "Start Session"
+description: 'Start Session'
 ---
 
 # Start Session
@@ -11,10 +11,10 @@ Initialize your AI development session and begin working on tasks.
 
 ## Operation Types
 
-| Marker | Meaning | Executor |
-|--------|---------|----------|
-| `[AI]` | Bash scripts or tool calls executed by AI | You (AI) |
-| `[USER]` | Skills executed by user | User |
+| Marker   | Meaning                                   | Executor |
+| -------- | ----------------------------------------- | -------- |
+| `[AI]`   | Bash scripts or tool calls executed by AI | You (AI) |
+| `[USER]` | Skills executed by user                   | User     |
 
 ---
 
@@ -29,6 +29,7 @@ cat .trellis/workflow.md
 ```
 
 **Follow the instructions in workflow.md** - it contains:
+
 - Core principles (Read Before Write, Follow Standards, etc.)
 - File system structure
 - Development process
@@ -64,12 +65,12 @@ Report what you learned and ask: "What would you like to work on?"
 
 When user describes a task, classify it:
 
-| Type | Criteria | Workflow |
-|------|----------|----------|
-| **Question** | User asks about code, architecture, or how something works | Answer directly |
-| **Trivial Fix** | Typo fix, comment update, single-line change, < 5 minutes | Direct Edit |
-| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm → Task Workflow |
-| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm → Task Workflow** |
+| Type             | Criteria                                                   | Workflow                       |
+| ---------------- | ---------------------------------------------------------- | ------------------------------ |
+| **Question**     | User asks about code, architecture, or how something works | Answer directly                |
+| **Trivial Fix**  | Typo fix, comment update, single-line change, < 5 minutes  | Direct Edit                    |
+| **Simple Task**  | Clear goal, 1-2 files, well-defined scope                  | Quick confirm → Task Workflow  |
+| **Complex Task** | Vague goal, multiple files, architectural decisions        | **Brainstorm → Task Workflow** |
 
 ### Decision Rule
 
@@ -129,6 +130,7 @@ See `/brainstorm` for the full process. Summary:
 ## Task Workflow (Development Tasks)
 
 **Why this workflow?**
+
 - Run a dedicated research pass before coding
 - Configure specs in jsonl context files
 - Implement using injected context
@@ -160,6 +162,7 @@ PRD and task directory already exist from brainstorm. Skip directly to Phase 2.
 **Step 1: Confirm Understanding** `[AI]`
 
 Quick confirm:
+
 - What is the goal?
 - What type of development? (frontend / backend / fullstack)
 - Any specific requirements or constraints?
@@ -180,17 +183,21 @@ Create `prd.md` in the task directory with:
 # <Task Title>
 
 ## Goal
+
 <What we're trying to achieve>
 
 ## Requirements
+
 - <Requirement 1>
 - <Requirement 2>
 
 ## Acceptance Criteria
+
 - [ ] <Criterion 1>
 - [ ] <Criterion 2>
 
 ## Technical Notes
+
 <Any technical decisions or constraints>
 ```
 
@@ -205,12 +212,14 @@ Create `prd.md` in the task directory with:
 If the task touches infra or cross-layer contracts, do not start implementation until code-spec depth is defined.
 
 Trigger this requirement when the change includes any of:
+
 - New or changed command/API signatures
 - Database schema or migration changes
 - Infra integrations (storage, queue, cache, secrets, env contracts)
 - Cross-layer payload transformations
 
 Must-have before proceeding:
+
 - [ ] Target code-spec files to update are identified
 - [ ] Concrete contract is defined (signature, fields, env keys)
 - [ ] Validation and error matrix is defined
@@ -228,12 +237,15 @@ Use this output format:
 
 ```markdown
 ## Relevant Specs
+
 - <path>: <why it's relevant>
 
 ## Code Patterns Found
+
 - <pattern>: <example file path>
 
 ## Files to Modify
+
 - <path>: <what change>
 ```
 
@@ -309,32 +321,32 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 
 ### User Skills `[USER]`
 
-| Skill | When to Use |
-|---------|-------------|
-| `/start` | Begin a session (this skill) |
-| `/finish-work` | Before committing changes |
-| `/record-session` | After completing a task |
+| Skill             | When to Use                  |
+| ----------------- | ---------------------------- |
+| `/start`          | Begin a session (this skill) |
+| `/finish-work`    | Before committing changes    |
+| `/record-session` | After completing a task      |
 
 ### AI Scripts `[AI]`
 
-| Script | Purpose |
-|--------|---------|
-| `python3 ./.trellis/scripts/get_context.py` | Get session context |
-| `python3 ./.trellis/scripts/task.py create` | Create task directory |
+| Script                                            | Purpose                |
+| ------------------------------------------------- | ---------------------- |
+| `python3 ./.trellis/scripts/get_context.py`       | Get session context    |
+| `python3 ./.trellis/scripts/task.py create`       | Create task directory  |
 | `python3 ./.trellis/scripts/task.py init-context` | Initialize jsonl files |
-| `python3 ./.trellis/scripts/task.py add-context` | Add spec to jsonl |
-| `python3 ./.trellis/scripts/task.py start` | Set current task |
-| `python3 ./.trellis/scripts/task.py finish` | Clear current task |
-| `python3 ./.trellis/scripts/task.py archive` | Archive completed task |
+| `python3 ./.trellis/scripts/task.py add-context`  | Add spec to jsonl      |
+| `python3 ./.trellis/scripts/task.py start`        | Set current task       |
+| `python3 ./.trellis/scripts/task.py finish`       | Clear current task     |
+| `python3 ./.trellis/scripts/task.py archive`      | Archive completed task |
 
 ### Workflow Phases `[AI]`
 
-| Phase | Purpose | Context Source |
-|-------|---------|----------------|
-| research | Analyze codebase | direct repo inspection |
-| implement | Write code | `implement.jsonl` |
-| check | Review & fix | `check.jsonl` |
-| debug | Fix specific issues | `debug.jsonl` |
+| Phase     | Purpose             | Context Source         |
+| --------- | ------------------- | ---------------------- |
+| research  | Analyze codebase    | direct repo inspection |
+| implement | Write code          | `implement.jsonl`      |
+| check     | Review & fix        | `check.jsonl`          |
+| debug     | Fix specific issues | `debug.jsonl`          |
 
 ---
 

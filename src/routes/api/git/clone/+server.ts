@@ -24,7 +24,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		// If target folder already exists and is not empty, error
 		if (fs.existsSync(targetPath) && fs.readdirSync(targetPath).length > 0) {
-			return json({ success: false, error: 'Target directory already exists and is not empty' }, { status: 400 });
+			return json(
+				{ success: false, error: 'Target directory already exists and is not empty' },
+				{ status: 400 }
+			);
 		}
 
 		// Check if sourcePath is a git repository
@@ -34,7 +37,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				// Initialize it as git repo
 				runGit(sourcePath, ['init']);
 				// Check if there are any files, if so add and commit
-				const files = fs.readdirSync(sourcePath).filter(f => f !== '.git');
+				const files = fs.readdirSync(sourcePath).filter((f) => f !== '.git');
 				if (files.length > 0) {
 					runGit(sourcePath, ['add', '.']);
 					runGit(sourcePath, ['commit', '-m', 'Initial commit from ohmycode auto-init'], {
@@ -46,8 +49,16 @@ export const POST: RequestHandler = async ({ request }) => {
 						}
 					});
 				}
-			} catch (err: any) {
-				return json({ success: false, error: 'Failed to initialize source directory as git repository', raw: err.message }, { status: 500 });
+			} catch (err) {
+				const e = err as Error;
+				return json(
+					{
+						success: false,
+						error: 'Failed to initialize source directory as git repository',
+						raw: e.message
+					},
+					{ status: 500 }
+				);
 			}
 		}
 
@@ -55,10 +66,14 @@ export const POST: RequestHandler = async ({ request }) => {
 		try {
 			runGlobalGit(['clone', sourcePath, targetPath], { timeout: 30000 });
 			return json({ success: true });
-		} catch (err: any) {
-			return json({ success: false, error: 'Failed to clone repository', raw: err.message }, { status: 500 });
+		} catch (err) {
+			const e = err as Error;
+			return json(
+				{ success: false, error: 'Failed to clone repository', raw: e.message },
+				{ status: 500 }
+			);
 		}
-	} catch (error: any) {
-		return json({ success: false, error: error.message }, { status: 500 });
+	} catch (error) {
+		return json({ success: false, error: (error as Error).message }, { status: 500 });
 	}
 };

@@ -1,11 +1,12 @@
 ---
 name: before-frontend-dev
-description: "Read the frontend development guidelines before starting your development task."
+description: 'Read the frontend development guidelines before starting your development task.'
 ---
 
 Read the frontend development guidelines before starting your development task.
 
 Execute these steps:
+
 1. Read `.trellis/spec/frontend/index.md` to understand available guidelines
 2. Based on your task, read the relevant guideline files:
    - Component work → `.trellis/spec/frontend/component-guidelines.md`

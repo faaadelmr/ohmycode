@@ -18,7 +18,7 @@
 </svelte:head>
 
 <div
-	class="min-h-screen-vh w-screen flex flex-col bg-base-100 font-sans text-base-content overflow-hidden select-none"
+	class="min-h-screen-vh flex w-screen flex-col overflow-hidden bg-base-100 font-sans text-base-content select-none"
 	data-theme={$theme}
 >
 	{@render children()}

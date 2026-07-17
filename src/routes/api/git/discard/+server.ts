@@ -28,12 +28,16 @@ export const POST: RequestHandler = async ({ request }) => {
 				// Remove all untracked files/dirs
 				runGit(projectPath, ['clean', '-fd']);
 				return json({ success: true });
-			} catch (err: any) {
-				return json({ 
-					success: false, 
-					error: 'Bulk discard failed', 
-					raw: err.stdout?.toString() || err.message 
-				}, { status: 400 });
+			} catch (err) {
+				const e = err as { stdout?: Buffer; message?: string };
+				return json(
+					{
+						success: false,
+						error: 'Bulk discard failed',
+						raw: e.stdout?.toString() || e.message
+					},
+					{ status: 400 }
+				);
 			}
 		}
 
@@ -64,12 +68,16 @@ export const POST: RequestHandler = async ({ request }) => {
 			}
 
 			return json({ success: true });
-		} catch (err: any) {
-			return json({ 
-				success: false, 
-				error: `Discard failed for ${file}`, 
-				raw: err.stdout?.toString() || err.message 
-			}, { status: 400 });
+		} catch (err) {
+			const e = err as { stdout?: Buffer; message?: string };
+			return json(
+				{
+					success: false,
+					error: `Discard failed for ${file}`,
+					raw: e.stdout?.toString() || e.message
+				},
+				{ status: 400 }
+			);
 		}
 	} catch (error) {
 		return json({ success: false, error: (error as Error).message }, { status: 500 });

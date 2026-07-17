@@ -1,12 +1,13 @@
+<!-- eslint-disable svelte/no-at-html-tags -->
 <script lang="ts">
-	import { kanbanStore } from '$lib/kanban.svelte';
+	import { kanbanStore, type DutyTask } from '$lib/kanban.svelte';
 	import { onMount } from 'svelte';
-	import { fade, slide, fly } from 'svelte/transition';
-	import { flip } from 'svelte/animate';
+	import { slide } from 'svelte/transition';
 	import { theme, themes } from '$lib/theme';
 	import CommitForm from './CommitForm.svelte';
 	import SettingsModal from './SettingsModal.svelte';
 	import StatusBar from './StatusBar.svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	let title = $state('');
 	let description = $state('');
@@ -20,9 +21,7 @@
 
 	// Folder Browser State
 	let isSyncing = $state(false);
-	let isPicking = $state(false);
 	let isCommitting = $state(false);
-	let pathSep = $state('/');
 
 	type GitChangeItem = {
 		id: string;
@@ -49,12 +48,11 @@
 		oldNumber: number | null;
 		newNumber: number | null;
 		content: string;
-		editable: boolean;
+		editable?: boolean;
 	};
 
 	let suggestions = $state<GitChangeItem[]>([]);
 	let stagedChanges = $state<GitChangeItem[]>([]);
-	let recentCommits = $state<string[]>([]);
 	let recentProjects = $state<string[]>([]);
 	let errorMessage = $state('');
 	let successMessage = $state('');
@@ -71,13 +69,11 @@
 	let cloneTargetPath = $state('');
 	let isCloning = $state(false);
 	let cloneProgress = $state(0);
-	let pickerTarget = $state<'project' | 'clone-source' | 'clone-target'>('project');
 
 	// Real-time Watcher State
 	let eventSource: EventSource | null = null;
 	let watcherStatus = $state<'connecting' | 'live' | 'offline'>('offline');
-	let lastSyncTime = $state<string>('');
-	let fallbackInterval: any = null;
+	let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 
 	let currentBranch = $state('main');
 	let isPushing = $state(false);
@@ -103,17 +99,10 @@
 	let stagedZoneEl = $state<HTMLElement | undefined>(undefined);
 	let unstagedZoneEl = $state<HTMLElement | undefined>(undefined);
 
-	let isDraggingActive = $derived(dragState !== null);
 	let dragHasMoved = $derived(
 		dragState !== null &&
 			(Math.abs(dragState.curX - dragState.startX) > 4 ||
 				Math.abs(dragState.curY - dragState.startY) > 4)
-	);
-	let isDraggingToStaged = $derived(
-		dragState !== null && !dragState.fromStaged && dropTarget === 'staged'
-	);
-	let isDraggingToUnstaged = $derived(
-		dragState !== null && dragState.fromStaged && dropTarget === 'unstaged'
 	);
 	let selectedChangeCount = $derived(
 		[...stagedChanges, ...suggestions].filter((s) => s.selected).length
@@ -170,7 +159,7 @@
 		title: string;
 		file?: GitChangeItem;
 		isStaged?: boolean;
-		task?: any;
+		task?: DutyTask;
 		comparisonId?: string;
 	};
 
@@ -191,12 +180,7 @@
 
 		openTabs.splice(idx, 1);
 		if (activeTabId === tabId) {
-			if (openTabs.length > 0) {
-				activeTabId = openTabs[openTabs.length - 1].id;
-			} else {
-				openTabs.push({ id: 'welcome', type: 'welcome', title: 'Welcome' });
-				activeTabId = 'welcome';
-			}
+			activeTabId = openTabs[openTabs.length - 1]?.id || 'welcome';
 		}
 	};
 
@@ -217,7 +201,7 @@
 			}
 		}
 
-		const rows: any[] = [];
+		const rows: DiffEditorRow[] = [];
 		let i = oldLines.length;
 		let j = newLines.length;
 
@@ -255,39 +239,24 @@
 		return rows;
 	};
 
-	const renderLineContent = (content: string, kind: string) => {
+	const renderLineContent = (content: string) => {
 		if (!content) return '&nbsp;';
-		let html = content
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;');
+		return content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	};
 
-		// Use green (success) for added lines, red (error) for removed lines
-		const isAdd = kind === 'add';
-		const bgClass = isAdd ? 'bg-success/25 text-success/80' : 'bg-error/25 text-error/80';
-
-		// Highlight trailing whitespace
-		html = html.replace(/([ \t]+)$/, (match) => {
-			return match
-				.replace(/\t/g, `<span class="${bgClass} select-none font-bold">→\t</span>`)
-				.replace(/ /g, `<span class="${bgClass} select-none font-bold">·</span>`);
-		});
-
-		// Highlight leading whitespace (indentation)
-		html = html.replace(/^([ \t]+)/, (match) => {
-			return match
-				.replace(/\t/g, '<span class="opacity-20 select-none">→\t</span>')
-				.replace(/ /g, '<span class="opacity-25 select-none">·</span>');
-		});
-
-		// Highlight multiple consecutive spaces in the middle of modified lines
-		if (kind !== 'context') {
-			html = html.replace(/ {2,}/g, (match) => {
-				return '<span class="opacity-20 select-none">' + '·'.repeat(match.length) + '</span>';
-			});
+	let isSyncingScroll = false;
+	const handleScroll = (e: Event, partnerId: string) => {
+		if (isSyncingScroll) return;
+		isSyncingScroll = true;
+		const el = e.currentTarget as HTMLElement;
+		const partner = document.getElementById(partnerId);
+		if (partner) {
+			partner.scrollTop = el.scrollTop;
+			partner.scrollLeft = el.scrollLeft;
 		}
-
-		return html;
+		window.requestAnimationFrame(() => {
+			isSyncingScroll = false;
+		});
 	};
 
 	const createManualComparison = () => {
@@ -358,7 +327,7 @@
 		startInlineEdit(loadedItem);
 	};
 
-	const openLogTab = async (task: any) => {
+	const openLogTab = async (task: DutyTask) => {
 		// If it's a real Git commit (id is short commit hash and has no files loaded yet)
 		if (task.id && task.id.length <= 10 && (!task.files || task.files.length === 0)) {
 			try {
@@ -367,7 +336,7 @@
 				);
 				const data = await res.json();
 				if (data.success && data.files) {
-					task.files = data.files.map((f: any) => f.file);
+					task.files = data.files.map((f: { file: string }) => f.file);
 					task.fileDiffs = {};
 				}
 			} catch (e) {
@@ -383,7 +352,7 @@
 		});
 	};
 
-	const downloadBackupFile = (task: any, file: string) => {
+	const downloadBackupFile = (task: DutyTask, file: string) => {
 		if (!task.projectPath && !projectPath) return;
 		const params = new URLSearchParams({
 			projectPath: task.projectPath || projectPath,
@@ -450,11 +419,11 @@
 		return !!openSavedDiffs[`${taskId}-${file}`];
 	};
 
-	const hasSavedFileDiff = (task: any, file: string) => {
+	const hasSavedFileDiff = (task: DutyTask, file: string) => {
 		return Boolean(task.fileDiffs?.[file] || task.hasSavedDiffs || task.id?.length <= 10);
 	};
 
-	const getSavedFileDiff = (task: any, file: string) => {
+	const getSavedFileDiff = (task: DutyTask, file: string) => {
 		return task.fileDiffs?.[file] || '';
 	};
 
@@ -588,19 +557,19 @@
 			fetchGitCommits();
 		};
 
-		eventSource.addEventListener('change', (e: any) => {
+		eventSource.addEventListener('change', (e: MessageEvent) => {
 			console.log('[Watcher] Remote change detected:', e.data);
 			debouncedSyncWithGit();
 		});
 
-		eventSource.onerror = (err) => {
+		eventSource.onerror = () => {
 			console.warn('[Watcher] SSE Connection error, switching to fallback polling...');
 			cleanupWatcher();
-			startFallbackPolling(path);
+			startFallbackPolling();
 		};
 	};
 
-	const startFallbackPolling = (path: string) => {
+	const startFallbackPolling = () => {
 		watcherStatus = 'connecting';
 		// Poll every 10 seconds as fallback
 		fallbackInterval = setInterval(() => {
@@ -666,17 +635,17 @@
 				cloneProgress = 0;
 				errorMessage = `Clone failed: ${data.error || 'Unknown error'}`;
 			}
-		} catch (e: any) {
+		} catch (e) {
 			clearInterval(progressInterval);
 			cloneProgress = 0;
-			errorMessage = `Failed to clone: ${e.message}`;
+			errorMessage = `Failed to clone: ${(e as Error).message}`;
 		} finally {
 			isCloning = false;
 		}
 	};
 
 	let refetchPending = false;
-	let syncDebounceTimeout: any = null;
+	let syncDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const syncWithGit = async () => {
 		if (!projectPath.trim()) return;
@@ -692,7 +661,7 @@
 			const res = await fetch(`/api/git?path=${encodeURIComponent(projectPath)}`);
 			const data = await res.json();
 			if (data.success) {
-				const syncList = (newList: any[], oldList: any[]) => {
+				const syncList = (newList: GitChangeItem[], oldList: GitChangeItem[]) => {
 					return newList.map((newItem) => {
 						const oldItem = oldList.find((o) => o.file === newItem.file && o.type === newItem.type);
 						return {
@@ -709,11 +678,9 @@
 
 				suggestions = syncList(data.suggestions, suggestions);
 				stagedChanges = syncList(data.stagedChanges, stagedChanges);
-				recentCommits = data.recentCommits;
 				if (data.branch) {
 					currentBranch = data.branch;
 				}
-				lastSyncTime = new Date().toLocaleTimeString();
 
 				// Automatically update currently open Diff tab structures if their corresponding items have changed
 				openTabs.forEach((tab, index) => {
@@ -743,13 +710,31 @@
 	};
 
 	const debouncedSyncWithGit = () => {
-		clearTimeout(syncDebounceTimeout);
+		if (syncDebounceTimeout) {
+			clearTimeout(syncDebounceTimeout);
+		}
 		syncDebounceTimeout = setTimeout(() => {
 			syncWithGit();
 		}, 500); // 500ms quiet-window debounce
 	};
 
-	let gitCommits = $state<any[]>([]);
+	type GitCommitFile = {
+		file: string;
+		type: string;
+		status?: string;
+	};
+
+	type GitCommit = {
+		id: string;
+		title: string;
+		message?: string;
+		author?: string;
+		date?: string;
+		refs?: string;
+		files?: GitCommitFile[];
+	};
+
+	let gitCommits = $state<GitCommit[]>([]);
 	let isLoadingCommits = $state(false);
 	let activeLogHistoryTab = $state<'git' | 'local'>('git');
 
@@ -764,7 +749,7 @@
 		return index < firstOriginIdx;
 	};
 
-	const toggleCommitAccordion = async (commit: any) => {
+	const toggleCommitAccordion = async (commit: GitCommit | DutyTask) => {
 		if (expandedCommitId === commit.id) {
 			expandedCommitId = null;
 			return;
@@ -772,7 +757,7 @@
 
 		expandedCommitId = commit.id;
 
-		if (!commit.files || commit.files.length === 0) {
+		if (!('createdAt' in commit) && (!commit.files || commit.files.length === 0)) {
 			loadingCommitId = commit.id;
 			try {
 				const res = await fetch(
@@ -780,7 +765,7 @@
 				);
 				const data = await res.json();
 				if (data.success && data.files) {
-					commit.files = data.files;
+					(commit as GitCommit).files = data.files;
 				}
 			} catch (e) {
 				console.error('Failed to fetch commit files', e);
@@ -790,7 +775,7 @@
 		}
 	};
 
-	const handleUndoCommit = async (commit: any) => {
+	const handleUndoCommit = async (commit: GitCommit) => {
 		const matchingTask = kanbanStore.tasks.find((t) => t.gitCommitHash === commit.id);
 		if (matchingTask) {
 			await kanbanStore.removeTask(matchingTask.id);
@@ -833,15 +818,6 @@
 		updateFormFromSelected();
 	};
 
-	const toggleDiff = (e: MouseEvent, index: number, isStagedList: boolean) => {
-		e.stopPropagation();
-		if (isStagedList) {
-			stagedChanges[index].showDiff = !stagedChanges[index].showDiff;
-		} else {
-			suggestions[index].showDiff = !suggestions[index].showDiff;
-		}
-	};
-
 	const toggleSelectAll = (isStagedList: boolean) => {
 		if (isStagedList) {
 			const anyUnselected = stagedChanges.some((s) => !s.selected);
@@ -854,7 +830,7 @@
 	};
 
 	const getChangedLineNumbers = (diff: string) => {
-		const changedLines = new Set<number>();
+		const changedLines = new SvelteSet<number>();
 		const lines = diff.split('\n');
 
 		for (const line of lines) {
@@ -1001,7 +977,7 @@
 			const builtLines = buildEditingLines(editingDraft, item.diff);
 			editingLines = builtLines;
 			editingRows = buildDiffEditorRows(item.diff);
-		} catch (e) {
+		} catch {
 			editingError = 'Failed to load file content';
 		} finally {
 			loadingEditor = false;
@@ -1051,30 +1027,12 @@
 
 			cancelInlineEdit();
 			await syncWithGit();
-		} catch (e) {
+		} catch {
 			editingError = 'Failed to save file';
 		} finally {
 			savingEditor = false;
 		}
 	};
-
-	// Conventional Commits inference
-	const CC_TYPES: Record<string, { label: string; color: string }> = {
-		feat: { label: 'feat', color: 'bg-primary/15 text-primary border-primary/30' },
-		fix: { label: 'fix', color: 'bg-error/15 text-error border-error/30' },
-		refactor: { label: 'refactor', color: 'bg-secondary/15 text-secondary border-secondary/30' },
-		docs: { label: 'docs', color: 'bg-info/15 text-info border-info/30' },
-		test: { label: 'test', color: 'bg-warning/15 text-warning border-warning/30' },
-		style: { label: 'style', color: 'bg-accent/15 text-accent border-accent/30' },
-		perf: { label: 'perf', color: 'bg-success/15 text-success border-success/30' },
-		chore: { label: 'chore', color: 'bg-base-content/10 text-base-content/50 border-base-300' },
-		build: { label: 'build', color: 'bg-base-content/10 text-base-content/50 border-base-300' },
-		ci: { label: 'ci', color: 'bg-base-content/10 text-base-content/50 border-base-300' }
-	};
-
-	const getFileCommitType = (item: GitChangeItem): string => inferConventionalType([item]).type;
-
-	const ccBadgeClass = (type: string): string => CC_TYPES[type]?.color ?? CC_TYPES['chore'].color;
 
 	const inferConventionalType = (
 		items: GitChangeItem[]
@@ -1318,10 +1276,6 @@
 		}
 	};
 
-	const useCommitMessage = (msg: string) => {
-		description = `Context: ${msg}`;
-	};
-
 	// ── Pointer-based Drag & Drop ──────────────────────────────────────
 
 	const onCardPointerDown = (e: PointerEvent, file: string, fromStaged: boolean) => {
@@ -1537,7 +1491,7 @@
 			} else {
 				errorMessage = `Discard failed: ${data.error}`;
 			}
-		} catch (e) {
+		} catch {
 			errorMessage = 'Failed to call discard API';
 		}
 	};
@@ -1549,8 +1503,8 @@
 		}
 	};
 
-	const handleSubmit = async (e?: SubmitEvent) => {
-		if (e) e.preventDefault();
+	const handleSubmit = async (_e?: SubmitEvent) => {
+		if (_e) _e.preventDefault();
 		if (!canSubmitLog) return;
 
 		const selectedItems = [...stagedChanges, ...suggestions].filter((s) => s.selected);
@@ -1596,7 +1550,7 @@
 					successMessage = 'Git Commit Successful!';
 					setTimeout(() => (successMessage = ''), 3000);
 				}
-			} catch (err) {
+			} catch {
 				errorMessage = 'Failed to execute git commit API';
 				isCommitting = false;
 				return;
@@ -1704,7 +1658,7 @@
 	<div class="flex w-full flex-1 overflow-hidden">
 		<!-- 2.1 Activity Bar (Far Left) -->
 		<aside
-			class="flex w-12 shrink-0 flex-col items-center justify-between border-r border-base-content/8 glass-panel py-2 select-none relative z-20"
+			class="glass-panel relative z-20 flex w-12 shrink-0 flex-col items-center justify-between border-r border-base-content/8 py-2 select-none"
 		>
 			<div class="flex w-full flex-col items-center gap-3.5">
 				<!-- Explorer Icon -->
@@ -1884,7 +1838,7 @@
 			<div class="flex w-full flex-col items-center gap-2">
 				<button
 					onclick={() => (showSettingsModal = true)}
-					class="rounded-lg p-2.5 text-base-content/50 transition-all hover:text-primary hover:bg-primary/10"
+					class="rounded-lg p-2.5 text-base-content/50 transition-all hover:bg-primary/10 hover:text-primary"
 					title="System Settings Configuration"
 				>
 					<svg
@@ -1906,12 +1860,12 @@
 		<!-- 2.2 Sidebar Panel (Collapsible, holds active views) -->
 		{#if !isSidebarCollapsed}
 			<section
-				class="flex h-full w-[310px] shrink-0 flex-col border-r border-base-content/8 glass-panel select-none relative z-10"
+				class="glass-panel relative z-10 flex h-full w-[310px] shrink-0 flex-col border-r border-base-content/8 select-none"
 				transition:slide={{ axis: 'x', duration: 200 }}
 			>
 				<!-- Sidebar Header -->
 				<div
-					class="flex h-10 shrink-0 items-center justify-between border-b border-base-content/8 px-4 bg-base-content/3"
+					class="flex h-10 shrink-0 items-center justify-between border-b border-base-content/8 bg-base-content/3 px-4"
 				>
 					<span class="text-[11px] font-bold tracking-widest uppercase opacity-70">
 						{#if activeSidebar === 'source-control'}
@@ -2031,7 +1985,7 @@
 										<input
 											type="checkbox"
 											checked={stagedChanges.length > 0 && stagedChanges.every((s) => s.selected)}
-											class="checkbox checkbox-xs checkbox-success scale-75"
+											class="checkbox scale-75 checkbox-xs checkbox-success"
 											onchange={() => toggleSelectAll(true)}
 											disabled={stagedChanges.length === 0}
 											aria-label="Select all staged changes"
@@ -2136,7 +2090,7 @@
 										<input
 											type="checkbox"
 											checked={suggestions.length > 0 && suggestions.every((s) => s.selected)}
-											class="checkbox checkbox-xs checkbox-warning scale-75"
+											class="checkbox scale-75 checkbox-xs checkbox-warning"
 											onchange={() => toggleSelectAll(false)}
 											disabled={suggestions.length === 0}
 											aria-label="Select all changes"
@@ -2369,7 +2323,7 @@
 									<div
 										class="vscode-scrollbar flex max-h-[40vh] flex-col gap-1.5 overflow-y-auto pr-0.5"
 									>
-										{#each recentProjects as path}
+										{#each recentProjects as path (path)}
 											<button
 												onclick={() => switchProject(path)}
 												class="rounded-xl border bg-base-100 p-2.5 text-left hover:bg-base-300 {projectPath ===
@@ -2439,11 +2393,11 @@
 											type="text"
 											bind:value={cloneSourcePath}
 											placeholder="C:/path/to/source"
-											class="input input-bordered input-xs flex-1 rounded font-mono text-[10px]"
+											class="input-bordered input input-xs flex-1 rounded font-mono text-[10px]"
 										/>
 										<button
 											onclick={() => openFolderPicker('clone-source')}
-											class="btn btn-square btn-xs btn-outline rounded"
+											class="btn btn-square rounded btn-outline btn-xs"
 											title="Browse source path"
 										>
 											📂
@@ -2463,11 +2417,11 @@
 											type="text"
 											bind:value={cloneTargetPath}
 											placeholder="C:/path/to/destination"
-											class="input input-bordered input-xs flex-1 rounded font-mono text-[10px]"
+											class="input-bordered input input-xs flex-1 rounded font-mono text-[10px]"
 										/>
 										<button
 											onclick={() => openFolderPicker('clone-target')}
-											class="btn btn-square btn-xs btn-outline rounded"
+											class="btn btn-square rounded btn-outline btn-xs"
 											title="Browse destination path"
 										>
 											📂
@@ -2476,13 +2430,13 @@
 								</div>
 
 								{#if isCloning}
-									<div class="flex flex-col gap-1 mt-1">
-										<div class="flex justify-between items-center text-[9px] font-mono opacity-80">
+									<div class="mt-1 flex flex-col gap-1">
+										<div class="flex items-center justify-between font-mono text-[9px] opacity-80">
 											<span>Progress:</span>
 											<span class="font-bold">{cloneProgress}%</span>
 										</div>
 										<progress
-											class="progress progress-secondary w-full h-1.5 rounded-full"
+											class="progress h-1.5 w-full rounded-full progress-secondary"
 											value={cloneProgress}
 											max="100"
 										></progress>
@@ -2492,10 +2446,10 @@
 								<button
 									onclick={handleCloneProject}
 									disabled={isCloning || !cloneSourcePath || !cloneTargetPath}
-									class="btn btn-xs btn-secondary w-full uppercase font-bold tracking-wider rounded mt-1"
+									class="btn mt-1 w-full rounded font-bold tracking-wider uppercase btn-xs btn-secondary"
 								>
 									{#if isCloning}
-										<span class="loading loading-spinner loading-xs"></span> Cloning...
+										<span class="loading loading-xs loading-spinner"></span> Cloning...
 									{:else}
 										Clone & Open Workspace
 									{/if}
@@ -2520,7 +2474,7 @@
 									value={$theme}
 									onchange={(e) => theme.set((e.currentTarget as HTMLSelectElement).value)}
 								>
-									{#each themes as t}
+									{#each themes as t (t)}
 										<option value={t} selected={$theme === t} class="font-bold capitalize"
 											>{t}</option
 										>
@@ -2602,7 +2556,7 @@
 									<div
 										class="vscode-scrollbar flex max-h-[50vh] flex-col gap-1.5 overflow-y-auto pr-0.5"
 									>
-										{#each manualComparisons as comp}
+										{#each manualComparisons as comp (comp.id)}
 											<div
 												role="button"
 												tabindex="0"
@@ -2648,7 +2602,7 @@
 												</div>
 												<button
 													onclick={(e) => deleteManualComparison(e, comp.id)}
-													class="btn btn-square btn-ghost btn-xs text-error/60 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-error/10 hover:text-error"
+													class="btn btn-square text-error/60 opacity-0 btn-ghost transition-opacity btn-xs group-hover:opacity-100 hover:bg-error/10 hover:text-error"
 													title="Delete this comparison"
 												>
 													✕
@@ -2820,7 +2774,7 @@
 						>
 							<div class="flex items-center gap-4">
 								<div
-									class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary text-primary-content shadow-xl shadow-primary/10"
+									class="flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br from-primary to-secondary text-primary-content shadow-xl shadow-primary/10"
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -2837,7 +2791,7 @@
 								</div>
 								<div class="text-left">
 									<h1
-										class="bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-3xl font-black tracking-tighter text-transparent uppercase"
+										class="bg-linear-to-r from-primary via-secondary to-accent bg-clip-text text-3xl font-black tracking-tighter text-transparent uppercase"
 									>
 										ohmycode
 									</h1>
@@ -2868,7 +2822,7 @@
 						<!-- Left deck: start and quick links (Col 4) -->
 						<div class="col-span-12 flex flex-col gap-6 lg:col-span-4">
 							<div
-								class="card hover-lift flex flex-col gap-4 rounded-2xl border border-base-content/8 glass-panel p-5 text-left shadow-xl"
+								class="hover-lift glass-panel card flex flex-col gap-4 rounded-2xl border border-base-content/8 p-5 text-left shadow-xl"
 							>
 								<h3
 									class="border-b border-base-content/8 pb-2 text-[10px] font-black tracking-widest uppercase opacity-50"
@@ -2919,7 +2873,7 @@
 
 							<!-- Productivity HUD widgets -->
 							<div
-								class="card hover-lift flex flex-col gap-4 rounded-2xl border border-base-content/8 glass-panel p-5 text-left shadow-xl"
+								class="hover-lift glass-panel card flex flex-col gap-4 rounded-2xl border border-base-content/8 p-5 text-left shadow-xl"
 							>
 								<h3
 									class="border-b border-base-content/8 pb-2 text-[10px] font-black tracking-widest uppercase opacity-50"
@@ -2929,23 +2883,27 @@
 
 								<div class="grid grid-cols-2 gap-3">
 									<div
-										class="flex flex-col items-start rounded-xl border border-primary/15 bg-primary/5 p-3 hover:bg-primary/10 transition-colors"
+										class="flex flex-col items-start rounded-xl border border-primary/15 bg-primary/5 p-3 transition-colors hover:bg-primary/10"
 									>
-										<span class="text-[9px] font-bold uppercase opacity-50 tracking-wider">Duties Logged</span>
+										<span class="text-[9px] font-bold tracking-wider uppercase opacity-50"
+											>Duties Logged</span
+										>
 										<span class="mt-1 text-2xl font-black text-primary"
 											>{productivityStats.totalLogged}</span
 										>
 									</div>
 									<div
-										class="flex flex-col items-start rounded-xl border border-secondary/15 bg-secondary/5 p-3 hover:bg-secondary/10 transition-colors"
+										class="flex flex-col items-start rounded-xl border border-secondary/15 bg-secondary/5 p-3 transition-colors hover:bg-secondary/10"
 									>
-										<span class="text-[9px] font-bold uppercase opacity-50 tracking-wider">Backups Stored</span>
+										<span class="text-[9px] font-bold tracking-wider uppercase opacity-50"
+											>Backups Stored</span
+										>
 										<span class="mt-1 text-2xl font-black text-secondary"
 											>{productivityStats.filesCount}</span
 										>
 									</div>
 									<div
-										class="col-span-2 flex flex-col items-start rounded-xl border border-accent/15 bg-accent/5 p-3 hover:bg-accent/10 transition-colors"
+										class="col-span-2 flex flex-col items-start rounded-xl border border-accent/15 bg-accent/5 p-3 transition-colors hover:bg-accent/10"
 									>
 										<span class="text-[10px] font-bold uppercase opacity-40">Git Accumulations</span
 										>
@@ -2966,7 +2924,7 @@
 
 							<!-- Helpful VS Code system tips -->
 							<div
-								class="card hover-lift flex flex-col gap-3 rounded-2xl border border-base-content/8 glass-panel p-5 text-left shadow-xl"
+								class="hover-lift glass-panel card flex flex-col gap-3 rounded-2xl border border-base-content/8 p-5 text-left shadow-xl"
 							>
 								<h3
 									class="border-b border-base-content/5 pb-2 text-xs font-black tracking-wider uppercase opacity-60"
@@ -3056,18 +3014,30 @@
 								{#if activeLogHistoryTab === 'git'}
 									{#each gitCommits as commit, index (commit.id)}
 										<!-- Timeline Row Container -->
-										<div class="relative pl-7 py-1">
+										<div class="relative py-1 pl-7">
 											<!-- Vertical line connecting dots -->
 											{#if index < gitCommits.length - 1}
-												<div class="absolute left-[13px] top-[24px] bottom-[-24px] w-0.5 {isCommitOutgoing(index) ? 'bg-primary' : 'bg-secondary/40'}"></div>
+												<div
+													class="absolute top-[24px] bottom-[-24px] left-[13px] w-0.5 {isCommitOutgoing(
+														index
+													)
+														? 'bg-primary'
+														: 'bg-secondary/40'}"
+												></div>
 											{/if}
-											
+
 											<!-- Colored Dot -->
-											<div class="absolute left-[9px] top-[14px] z-10 flex h-2.5 w-2.5 items-center justify-center">
+											<div
+												class="absolute top-[14px] left-[9px] z-10 flex h-2.5 w-2.5 items-center justify-center"
+											>
 												{#if isCommitOutgoing(index)}
-													<div class="h-2.5 w-2.5 rounded-full border-2 border-primary bg-base-100 ring-2 ring-primary/20"></div>
+													<div
+														class="h-2.5 w-2.5 rounded-full border-2 border-primary bg-base-100 ring-2 ring-primary/20"
+													></div>
 												{:else}
-													<div class="h-2.5 w-2.5 rounded-full bg-secondary ring-2 ring-secondary/20"></div>
+													<div
+														class="h-2.5 w-2.5 rounded-full bg-secondary ring-2 ring-secondary/20"
+													></div>
 												{/if}
 											</div>
 
@@ -3077,11 +3047,15 @@
 												onkeydown={(e) => e.key === 'Enter' && toggleCommitAccordion(commit)}
 												role="button"
 												tabindex="0"
-												class="group flex cursor-pointer flex-col gap-2 rounded-xl border border-base-content/5 bg-base-200/40 p-3 transition-all select-none hover:border-primary/20 hover:bg-base-200/90 text-left"
+												class="group flex cursor-pointer flex-col gap-2 rounded-xl border border-base-content/5 bg-base-200/40 p-3 text-left transition-all select-none hover:border-primary/20 hover:bg-base-200/90"
 											>
-												<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+												<div
+													class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
+												>
 													<!-- Title / Commit Summary -->
-													<div class="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-row md:items-center">
+													<div
+														class="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-row md:items-center"
+													>
 														<!-- Short Monospace Hash Badge -->
 														<span
 															class="w-fit rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-primary uppercase"
@@ -3098,20 +3072,56 @@
 													<!-- Branch Decorator Tags with Premium Icons -->
 													{#if commit.refs}
 														<div class="flex flex-wrap gap-1">
-															{#each commit.refs.split(',') as rawRef}
+															{#each commit.refs.split(',') as rawRef (rawRef)}
 																{@const ref = rawRef.trim()}
 																{#if ref.includes('HEAD ->')}
-																	<span class="badge h-4.5 gap-1 border-primary/20 bg-primary/10 px-2 font-mono text-[9px] font-bold text-primary">
-																		<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+																	<span
+																		class="badge h-4.5 gap-1 border-primary/20 bg-primary/10 px-2 font-mono text-[9px] font-bold text-primary"
+																	>
+																		<svg
+																			xmlns="http://www.w3.org/2000/svg"
+																			width="9"
+																			height="9"
+																			viewBox="0 0 24 24"
+																			fill="none"
+																			stroke="currentColor"
+																			stroke-width="3"
+																			stroke-linecap="round"
+																			stroke-linejoin="round"
+																			><circle cx="12" cy="12" r="10" /><circle
+																				cx="12"
+																				cy="12"
+																				r="3"
+																			/></svg
+																		>
 																		{ref.replace('HEAD ->', '').trim()}
 																	</span>
-																{:else if ref.toLowerCase().includes('origin/') || ref.toLowerCase().includes('upstream/')}
-																	<span class="badge h-4.5 gap-1 border-secondary/20 bg-secondary/10 px-2 font-mono text-[9px] font-bold text-secondary">
-																		<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.47 0-.89.09-1.3.26A5 5 0 0 0 5 13c0 2.2 1.8 4 4 4h8.5Z"/></svg>
+																{:else if ref.toLowerCase().includes('origin/') || ref
+																		.toLowerCase()
+																		.includes('upstream/')}
+																	<span
+																		class="badge h-4.5 gap-1 border-secondary/20 bg-secondary/10 px-2 font-mono text-[9px] font-bold text-secondary"
+																	>
+																		<svg
+																			xmlns="http://www.w3.org/2000/svg"
+																			width="9"
+																			height="9"
+																			viewBox="0 0 24 24"
+																			fill="none"
+																			stroke="currentColor"
+																			stroke-width="3"
+																			stroke-linecap="round"
+																			stroke-linejoin="round"
+																			><path
+																				d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.47 0-.89.09-1.3.26A5 5 0 0 0 5 13c0 2.2 1.8 4 4 4h8.5Z"
+																			/></svg
+																		>
 																		{ref}
 																	</span>
 																{:else}
-																	<span class="badge h-4.5 border-base-content/10 bg-base-200 px-2 font-mono text-[9px] font-bold opacity-60">
+																	<span
+																		class="badge h-4.5 border-base-content/10 bg-base-200 px-2 font-mono text-[9px] font-bold opacity-60"
+																	>
 																		{ref}
 																	</span>
 																{/if}
@@ -3143,7 +3153,9 @@
 																	stroke-width="2.5"
 																	stroke-linecap="round"
 																	stroke-linejoin="round"
-																	><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg
+																	><path d="M3 7v6h6" /><path
+																		d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"
+																	/></svg
 																>
 															</button>
 														{/if}
@@ -3152,26 +3164,46 @@
 
 												<!-- Accordion Panel Details -->
 												{#if expandedCommitId === commit.id}
-													<div class="mt-2 flex flex-col gap-2 border-t border-base-content/10 pt-2" transition:slide>
+													<div
+														class="mt-2 flex flex-col gap-2 border-t border-base-content/10 pt-2"
+														transition:slide
+													>
 														{#if loadingCommitId === commit.id}
-															<div class="flex items-center gap-2 py-2 text-xs text-primary font-semibold">
-																<span class="loading loading-spinner loading-xs"></span>
+															<div
+																class="flex items-center gap-2 py-2 text-xs font-semibold text-primary"
+															>
+																<span class="loading loading-xs loading-spinner"></span>
 																<span>Loading modified files...</span>
 															</div>
 														{:else if commit.files && commit.files.length > 0}
 															<div class="flex flex-col gap-1">
-																<p class="font-mono text-[9px] uppercase tracking-widest opacity-45">Modified Files</p>
-																{#each commit.files as f}
-																	<div class="flex items-center justify-between gap-4 font-mono bg-base-200/50 hover:bg-base-200 px-2.5 py-1.5 rounded-lg border border-base-content/5 transition-all text-[10px]">
+																<p
+																	class="font-mono text-[9px] tracking-widest uppercase opacity-45"
+																>
+																	Modified Files
+																</p>
+																{#each commit.files as f (f.file)}
+																	<div
+																		class="flex items-center justify-between gap-4 rounded-lg border border-base-content/5 bg-base-200/50 px-2.5 py-1.5 font-mono text-[10px] transition-all hover:bg-base-200"
+																	>
 																		<span class="truncate text-base-content/95">{f.file}</span>
-																		<span class="badge badge-xs scale-90 border-transparent font-bold {f.type === 'Added' ? 'bg-success/20 text-success' : f.type === 'Deleted' ? 'bg-error/20 text-error' : 'bg-warning/20 text-warning'}">
+																		<span
+																			class="badge scale-90 border-transparent badge-xs font-bold {f.type ===
+																			'Added'
+																				? 'bg-success/20 text-success'
+																				: f.type === 'Deleted'
+																					? 'bg-error/20 text-error'
+																					: 'bg-warning/20 text-warning'}"
+																		>
 																			{f.status || 'M'}
 																		</span>
 																	</div>
 																{/each}
 															</div>
 														{:else}
-															<p class="text-xs opacity-40 font-mono py-1">No file changes detected.</p>
+															<p class="py-1 font-mono text-xs opacity-40">
+																No file changes detected.
+															</p>
 														{/if}
 													</div>
 												{/if}
@@ -3209,15 +3241,21 @@
 								{:else}
 									{#each kanbanStore.tasks as task, index (task.id)}
 										<!-- Timeline Row Container -->
-										<div class="relative pl-7 py-1">
+										<div class="relative py-1 pl-7">
 											<!-- Vertical line connecting dots -->
 											{#if index < kanbanStore.tasks.length - 1}
-												<div class="absolute left-[13px] top-[24px] bottom-[-24px] w-0.5 bg-success/30"></div>
+												<div
+													class="absolute top-[24px] bottom-[-24px] left-[13px] w-0.5 bg-success/30"
+												></div>
 											{/if}
-											
+
 											<!-- Colored Dot -->
-											<div class="absolute left-[9px] top-[14px] z-10 flex h-2.5 w-2.5 items-center justify-center">
-												<div class="h-2.5 w-2.5 rounded-full bg-success ring-2 ring-success/20"></div>
+											<div
+												class="absolute top-[14px] left-[9px] z-10 flex h-2.5 w-2.5 items-center justify-center"
+											>
+												<div
+													class="h-2.5 w-2.5 rounded-full bg-success ring-2 ring-success/20"
+												></div>
 											</div>
 
 											<!-- Interactive Row Card -->
@@ -3226,11 +3264,15 @@
 												onkeydown={(e) => e.key === 'Enter' && toggleCommitAccordion(task)}
 												role="button"
 												tabindex="0"
-												class="group flex cursor-pointer flex-col gap-2 rounded-xl border border-base-content/5 bg-base-200/40 p-3 transition-all select-none hover:border-primary/20 hover:bg-base-200/90 text-left"
+												class="group flex cursor-pointer flex-col gap-2 rounded-xl border border-base-content/5 bg-base-200/40 p-3 text-left transition-all select-none hover:border-primary/20 hover:bg-base-200/90"
 											>
-												<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+												<div
+													class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
+												>
 													<!-- Title / Conventional Commit Summary -->
-													<div class="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-row md:items-center">
+													<div
+														class="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-row md:items-center"
+													>
 														<!-- Short Monospace Hash Badge -->
 														<span
 															class="w-fit rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-primary uppercase"
@@ -3242,7 +3284,7 @@
 														>
 															{task.title}
 														</span>
-														
+
 														<!-- Branch Badge -->
 														<span
 															class="badge h-4 border-secondary/20 bg-secondary/10 px-1.5 font-mono text-[9px] font-bold text-secondary"
@@ -3253,13 +3295,28 @@
 
 													<div class="flex items-center gap-2">
 														<!-- Backups count badge -->
-														<span class="badge badge-sm border-base-content/10 bg-base-100 px-2 py-1 font-semibold opacity-75 gap-1">
-															<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+														<span
+															class="badge gap-1 border-base-content/10 bg-base-100 px-2 py-1 badge-sm font-semibold opacity-75"
+														>
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																width="9"
+																height="9"
+																viewBox="0 0 24 24"
+																fill="none"
+																stroke="currentColor"
+																stroke-width="2.5"
+																><path
+																	d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+																></path><polyline points="14 2 14 8 20 8"></polyline></svg
+															>
 															{task.files.length} backups
 														</span>
 
 														<!-- Actions on the right -->
-														<div class="flex items-center gap-1 border-l border-base-content/10 pl-1">
+														<div
+															class="flex items-center gap-1 border-l border-base-content/10 pl-1"
+														>
 															<!-- Undo Last Commit or Delete Log button -->
 															{#if task.id === kanbanStore.tasks[0]?.id && task.gitCommitHash}
 																<button
@@ -3280,7 +3337,9 @@
 																		stroke-width="2.5"
 																		stroke-linecap="round"
 																		stroke-linejoin="round"
-																		><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg
+																		><path d="M3 7v6h6" /><path
+																			d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"
+																		/></svg
 																	>
 																</button>
 															{:else}
@@ -3314,7 +3373,9 @@
 												</div>
 
 												{#if task.description || task.notes}
-													<p class="truncate text-[11px] leading-relaxed font-medium opacity-50 text-left">
+													<p
+														class="truncate text-left text-[11px] leading-relaxed font-medium opacity-50"
+													>
 														{task.description ? task.description + ' — ' : ''}{task.notes || ''}
 													</p>
 												{/if}
@@ -3332,19 +3393,28 @@
 
 												<!-- Accordion Panel Details -->
 												{#if expandedCommitId === task.id}
-													<div class="mt-2 flex flex-col gap-2 border-t border-base-content/10 pt-2" transition:slide>
+													<div
+														class="mt-2 flex flex-col gap-2 border-t border-base-content/10 pt-2"
+														transition:slide
+													>
 														{#if task.files && task.files.length > 0}
 															<div class="flex flex-col gap-1">
-																<p class="font-mono text-[9px] uppercase tracking-widest opacity-45">Backup Files</p>
-																{#each task.files as file}
-																	<div class="flex items-center justify-between gap-4 font-mono bg-base-200/50 hover:bg-base-200 px-2.5 py-1 rounded-lg border border-base-content/5 transition-all text-[10px]">
+																<p
+																	class="font-mono text-[9px] tracking-widest uppercase opacity-45"
+																>
+																	Backup Files
+																</p>
+																{#each task.files as file (file)}
+																	<div
+																		class="flex items-center justify-between gap-4 rounded-lg border border-base-content/5 bg-base-200/50 px-2.5 py-1 font-mono text-[10px] transition-all hover:bg-base-200"
+																	>
 																		<span class="truncate text-base-content/95">{file}</span>
 																		<button
 																			onclick={(e) => {
 																				e.stopPropagation();
 																				downloadBackupFile(task, file);
 																			}}
-																			class="btn btn-ghost btn-xs text-primary font-bold hover:bg-primary/10 rounded-md"
+																			class="btn rounded-md font-bold text-primary btn-ghost btn-xs hover:bg-primary/10"
 																		>
 																			Download
 																		</button>
@@ -3352,7 +3422,9 @@
 																{/each}
 															</div>
 														{:else}
-															<p class="text-xs opacity-40 font-mono py-1">No backup files found.</p>
+															<p class="py-1 font-mono text-xs opacity-40">
+																No backup files found.
+															</p>
 														{/if}
 													</div>
 												{/if}
@@ -3460,7 +3532,10 @@
 
 							<!-- Diff editor frame -->
 							<div
-								class="vscode-scrollbar relative h-full flex-1 overflow-auto bg-black/95 text-[#f8f8f2]"
+								class="vscode-scrollbar relative h-full flex-1 bg-black/95 text-[#f8f8f2] {diffViewType ===
+								'split'
+									? 'overflow-hidden'
+									: 'overflow-auto'}"
 							>
 								{#if loadingEditor}
 									<div class="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
@@ -3470,101 +3545,159 @@
 
 								<!-- RENDER: SPLIT DIFF VIEW -->
 								{#if diffViewType === 'split'}
-									<div
-										class="flex min-h-full min-w-max flex-col p-2 font-mono text-[11px] leading-relaxed select-text"
-									>
-										{#each editingRows as row, rIdx (row.key)}
+									{#if editingRows && editingRows.length > 0}
+										<div
+											class="flex h-full w-full overflow-hidden font-mono text-[11px] leading-relaxed select-text"
+										>
+											<!-- Left Pane (Original) -->
 											<div
-												class="grid min-h-[19px] grid-cols-2 border-b border-white/5 align-middle transition-colors hover:bg-white/5"
+												id="git-diff-left-{item.id}"
+												class="vscode-scrollbar h-full min-w-0 flex-1 overflow-auto bg-black/95 p-2"
+												onscroll={(e) => handleScroll(e, `git-diff-right-${item.id}`)}
 											>
-												<!-- LEFT pane (Removed/Context) -->
-												{#if row.kind === 'hunk'}
+												{#each editingRows as row (row.key)}
 													<div
-														class="col-span-2 bg-[#21252b] px-3 py-0.5 font-semibold text-[#5c6370] select-none"
+														class="flex min-h-[19px] items-center border-b border-white/5 transition-colors hover:bg-white/5"
 													>
-														{row.content}
-													</div>
-												{:else if row.kind === 'remove'}
-													<div
-														class="flex h-full items-center border-r border-white/10 bg-[#3a1d1d] px-2 text-[#ff8080]"
-													>
-														<span
-															class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
-															>{row.oldNumber}</span
-														>
-														<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-														<span class="w-full whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
-													</div>
-													<div
-														class="border-r border-white/10 bg-[#1e1e1e] opacity-30 select-none"
-														style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"
-													></div>
-												{:else if row.kind === 'add'}
-													<div
-														class="border-r border-white/10 bg-[#1e1e1e] opacity-30 select-none"
-														style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"
-													></div>
-													<div class="flex h-full items-center bg-[#1b2f1c] px-2 text-[#80ff80]">
-														<span
-															class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
-															>{row.newNumber}</span
-														>
-														<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
-
-														{#if row.editable && editingDiffId === item.id}
-															<input
-																type="text"
-																value={row.content}
-																oninput={(e) =>
-																	updateEditingRow(
-																		rIdx,
-																		(e.currentTarget as HTMLInputElement).value
-																	)}
-																class="h-full w-full border-0 bg-transparent p-0 font-mono text-[11px] text-[#a6e22e] focus:outline-none"
-																spellcheck="false"
-															/>
-														{:else}
-															<span
-																role="button"
-																tabindex="0"
-																class="w-full whitespace-pre"
-																ondblclick={() => startInlineEdit(item)}
-																onkeydown={(e) => e.key === 'Enter' && startInlineEdit(item)}
-																title="Double click to edit">{row.content}</span
+														{#if row.kind === 'hunk'}
+															<div
+																class="w-full bg-[#21252b] px-3 py-0.5 font-semibold text-[#5c6370] select-none"
 															>
+																{row.content}
+															</div>
+														{:else if row.kind === 'remove'}
+															<div
+																class="flex h-full w-full items-center bg-[#3a1d1d] px-2 text-[#ff8080]"
+															>
+																<span
+																	class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																	>{row.oldNumber}</span
+																>
+																<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
+																<span class="w-full whitespace-pre"
+																	>{@html renderLineContent(row.content)}</span
+																>
+															</div>
+														{:else if row.kind === 'add'}
+															<div
+																class="h-full w-full opacity-35 select-none"
+																style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px); min-height: 18px;"
+															></div>
+														{:else}
+															<!-- Context -->
+															<div
+																class="flex h-full w-full items-center bg-transparent px-2 opacity-65"
+															>
+																<span
+																	class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																	>{row.oldNumber}</span
+																>
+																<span class="w-3 shrink-0 select-none"></span>
+																<span class="w-full whitespace-pre"
+																	>{@html renderLineContent(row.content)}</span
+																>
+															</div>
 														{/if}
 													</div>
-												{:else}
-													<!-- Context -->
-													<div
-														class="flex h-full items-center border-r border-white/10 bg-transparent px-2 opacity-65"
-													>
-														<span
-															class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
-															>{row.oldNumber}</span
-														>
-														<span class="w-3 shrink-0 select-none"></span>
-														<span class="w-full whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
-													</div>
-													<div
-														class="flex h-full items-center border-r border-white/10 bg-transparent px-2 opacity-65"
-													>
-														<span
-															class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
-															>{row.newNumber}</span
-														>
-														<span class="w-3 shrink-0 select-none"></span>
-														<span class="w-full whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
-													</div>
-												{/if}
+												{/each}
 											</div>
-										{:else}
-											<!-- Fallback to raw diff displays if rows not loaded yet -->
-											<div class="p-4 whitespace-pre font-mono text-xs opacity-60">
-												{item.diff || 'No content changes detected'}
+
+											<!-- Central Diff Track Bar -->
+											<div
+												class="relative h-full w-2 shrink-0 border-x border-white/10 bg-base-300/10 select-none"
+											>
+												{#each editingRows as row, idx (row.key)}
+													{#if row.kind === 'remove'}
+														<div
+															class="absolute right-0 left-0 h-[3px] bg-error/80"
+															style="top: {(idx / editingRows.length) * 100}%"
+														></div>
+													{:else if row.kind === 'add'}
+														<div
+															class="absolute right-0 left-0 h-[3px] bg-success/80"
+															style="top: {(idx / editingRows.length) * 100}%"
+														></div>
+													{/if}
+												{/each}
 											</div>
-										{/each}
-									</div>
+
+											<!-- Right Pane (Modified) -->
+											<div
+												id="git-diff-right-{item.id}"
+												class="vscode-scrollbar h-full min-w-0 flex-1 overflow-auto bg-black/95 p-2"
+												onscroll={(e) => handleScroll(e, `git-diff-left-${item.id}`)}
+											>
+												{#each editingRows as row, rIdx (row.key)}
+													<div
+														class="flex min-h-[19px] items-center border-b border-white/5 transition-colors hover:bg-white/5"
+													>
+														{#if row.kind === 'hunk'}
+															<div
+																class="w-full bg-[#21252b] px-3 py-0.5 font-semibold text-[#5c6370] select-none"
+															>
+																{row.content}
+															</div>
+														{:else if row.kind === 'add'}
+															<div
+																class="flex h-full w-full items-center bg-[#1b2f1c] px-2 text-[#80ff80]"
+															>
+																<span
+																	class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																	>{row.newNumber}</span
+																>
+																<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
+																{#if row.editable && editingDiffId === item.id}
+																	<input
+																		type="text"
+																		value={row.content}
+																		oninput={(e) =>
+																			updateEditingRow(
+																				rIdx,
+																				(e.currentTarget as HTMLInputElement).value
+																			)}
+																		class="h-full w-full border-0 bg-transparent p-0 font-mono text-[11px] text-[#a6e22e] focus:outline-none"
+																		spellcheck="false"
+																	/>
+																{:else}
+																	<span
+																		role="button"
+																		tabindex="0"
+																		class="w-full whitespace-pre"
+																		ondblclick={() => startInlineEdit(item)}
+																		onkeydown={(e) => e.key === 'Enter' && startInlineEdit(item)}
+																		title="Double click to edit">{row.content}</span
+																	>
+																{/if}
+															</div>
+														{:else if row.kind === 'remove'}
+															<div
+																class="h-full w-full opacity-35 select-none"
+																style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px); min-height: 18px;"
+															></div>
+														{:else}
+															<!-- Context -->
+															<div
+																class="flex h-full w-full items-center bg-transparent px-2 opacity-65"
+															>
+																<span
+																	class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																	>{row.newNumber}</span
+																>
+																<span class="w-3 shrink-0 select-none"></span>
+																<span class="w-full whitespace-pre"
+																	>{@html renderLineContent(row.content)}</span
+																>
+															</div>
+														{/if}
+													</div>
+												{/each}
+											</div>
+										</div>
+									{:else}
+										<div class="p-4 font-mono text-xs whitespace-pre opacity-60">
+											{item.diff || 'No content changes detected'}
+										</div>
+									{/if}
 
 									<!-- RENDER: INLINE DIFF VIEW -->
 								{:else}
@@ -3589,7 +3722,9 @@
 														>
 														<span class="w-9 shrink-0"></span>
 														<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-														<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
+														<span class="whitespace-pre"
+															>{@html renderLineContent(row.content)}</span
+														>
 													</div>
 												{:else if row.kind === 'add'}
 													<div class="flex w-full items-center bg-[#1b2f1c] py-0.5 text-[#80ff80]">
@@ -3635,7 +3770,9 @@
 															>{row.newNumber}</span
 														>
 														<span class="w-3 shrink-0"></span>
-														<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
+														<span class="whitespace-pre"
+															>{@html renderLineContent(row.content)}</span
+														>
 													</div>
 												{/if}
 											</div>
@@ -3667,12 +3804,12 @@
 										<input
 											type="text"
 											bind:value={manualComparisons[compIndex].title}
-											class="input input-xs bg-base-100 border border-base-content/10 text-xs font-bold w-48 rounded"
+											class="input input-xs w-48 rounded border border-base-content/10 bg-base-100 text-xs font-bold"
 											placeholder="Comparison Name"
 										/>
 									</div>
 									<div class="flex items-center gap-2">
-										<div class="flex items-center rounded-lg bg-base-content/5 px-2 py-0.5 mr-2">
+										<div class="mr-2 flex items-center rounded-lg bg-base-content/5 px-2 py-0.5">
 											<span class="mr-2 text-[10px] font-bold uppercase opacity-60">Mode</span>
 											<button
 												onclick={() => (manualComparisons[compIndex].viewMode = 'edit')}
@@ -3721,32 +3858,34 @@
 								</div>
 
 								<!-- Workspace editor area -->
-								<div class="flex-1 overflow-hidden relative">
+								<div class="relative flex-1 overflow-hidden">
 									{#if comp.viewMode === 'edit'}
 										<!-- Side by side textareas -->
-										<div class="grid grid-cols-2 h-full divide-x divide-base-content/10 bg-black/95">
-											<div class="flex flex-col h-full p-4">
+										<div
+											class="grid h-full grid-cols-2 divide-x divide-base-content/10 bg-black/95"
+										>
+											<div class="flex h-full flex-col p-4">
 												<div
-													class="mb-2 text-[10px] font-bold tracking-widest text-[#5c6370] uppercase font-mono"
+													class="mb-2 font-mono text-[10px] font-bold tracking-widest text-[#5c6370] uppercase"
 												>
 													BEFORE (ORIGINAL)
 												</div>
 												<textarea
 													bind:value={manualComparisons[compIndex].beforeCode}
-													class="w-full flex-1 bg-transparent text-[#f8f8f2] font-mono text-[11px] leading-relaxed resize-none focus:outline-none custom-scrollbar p-2 border border-white/5 rounded"
+													class="custom-scrollbar w-full flex-1 resize-none rounded border border-white/5 bg-transparent p-2 font-mono text-[11px] leading-relaxed text-[#f8f8f2] focus:outline-none"
 													placeholder="Paste or type original code here..."
 													spellcheck="false"
 												></textarea>
 											</div>
-											<div class="flex flex-col h-full p-4">
+											<div class="flex h-full flex-col p-4">
 												<div
-													class="mb-2 text-[10px] font-bold tracking-widest text-[#5c6370] uppercase font-mono"
+													class="mb-2 font-mono text-[10px] font-bold tracking-widest text-[#5c6370] uppercase"
 												>
 													AFTER (MODIFIED)
 												</div>
 												<textarea
 													bind:value={manualComparisons[compIndex].afterCode}
-													class="w-full flex-1 bg-transparent text-[#f8f8f2] font-mono text-[11px] leading-relaxed resize-none focus:outline-none custom-scrollbar p-2 border border-white/5 rounded"
+													class="custom-scrollbar w-full flex-1 resize-none rounded border border-white/5 bg-transparent p-2 font-mono text-[11px] leading-relaxed text-[#f8f8f2] focus:outline-none"
 													placeholder="Paste or type modified code here..."
 													spellcheck="false"
 												></textarea>
@@ -3756,83 +3895,134 @@
 										<!-- Render dynamic diff generated from beforeCode and afterCode -->
 										{@const diffRows = diffManualLines(comp.beforeCode, comp.afterCode)}
 										<div
-											class="vscode-scrollbar h-full overflow-auto bg-black/95 text-[#f8f8f2] p-2"
+											class="vscode-scrollbar h-full bg-black/95 p-2 text-[#f8f8f2] {comp.layout ===
+											'split'
+												? 'overflow-hidden'
+												: 'overflow-auto'}"
 										>
 											{#if comp.layout === 'split'}
 												<div
-													class="flex min-h-full min-w-max flex-col font-mono text-[11px] leading-relaxed select-text"
+													class="flex h-full w-full overflow-hidden font-mono text-[11px] leading-relaxed select-text"
 												>
-													{#each diffRows as row (row.key)}
-														<div
-															class="grid min-h-[19px] grid-cols-2 border-b border-white/5 align-middle transition-colors hover:bg-white/5"
-														>
+													<div
+														id="manual-diff-left-{comp.id}"
+														class="vscode-scrollbar h-full min-w-0 flex-1 overflow-auto bg-black/95 p-2"
+														onscroll={(e) => handleScroll(e, `manual-diff-right-${comp.id}`)}
+													>
+														{#each diffRows as row (row.key)}
+															<div
+																class="flex min-h-[19px] items-center border-b border-white/5 transition-colors hover:bg-white/5"
+															>
+																{#if row.kind === 'remove'}
+																	<div
+																		class="flex h-full w-full items-center bg-[#3a1d1d] px-2 text-[#ff8080]"
+																	>
+																		<span
+																			class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																			>{row.oldNumber}</span
+																		>
+																		<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
+																		<span class="w-full whitespace-pre"
+																			>{@html renderLineContent(row.content)}</span
+																		>
+																	</div>
+																{:else if row.kind === 'add'}
+																	<div
+																		class="h-full w-full opacity-35 select-none"
+																		style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px); min-height: 18px;"
+																	></div>
+																{:else}
+																	<!-- Context -->
+																	<div
+																		class="flex h-full w-full items-center bg-transparent px-2 opacity-65"
+																	>
+																		<span
+																			class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																			>{row.oldNumber}</span
+																		>
+																		<span class="w-3 shrink-0 select-none"></span>
+																		<span class="w-full whitespace-pre"
+																			>{@html renderLineContent(row.content)}</span
+																		>
+																	</div>
+																{/if}
+															</div>
+														{:else}
+															<div class="p-8 text-center text-xs opacity-40 italic">
+																No differences found. Code is identical.
+															</div>
+														{/each}
+													</div>
+
+													<!-- Central Diff Track Bar -->
+													<div
+														class="relative h-full w-2 shrink-0 border-x border-white/10 bg-base-300/10 select-none"
+													>
+														{#each diffRows as row, idx (row.key)}
 															{#if row.kind === 'remove'}
 																<div
-																	class="flex h-full items-center border-r border-white/10 bg-[#3a1d1d] px-2 text-[#ff8080]"
-																>
-																	<span
-																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
-																		>{row.oldNumber}</span
-																	>
-																	<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-																	<span class="w-full whitespace-pre"
-																		>{@html renderLineContent(row.content, row.kind)}</span
-																	>
-																</div>
-																<div
-																	class="border-r border-white/10 bg-[#1e1e1e] opacity-30 select-none"
-																	style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"
+																	class="absolute right-0 left-0 h-[3px] bg-error/80"
+																	style="top: {(idx / diffRows.length) * 100}%"
 																></div>
 															{:else if row.kind === 'add'}
 																<div
-																	class="border-r border-white/10 bg-[#1e1e1e] opacity-30 select-none"
-																	style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px);"
+																	class="absolute right-0 left-0 h-[3px] bg-success/80"
+																	style="top: {(idx / diffRows.length) * 100}%"
 																></div>
-																<div
-																	class="flex h-full items-center bg-[#1b2f1c] px-2 text-[#80ff80]"
-																>
-																	<span
-																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
-																		>{row.newNumber}</span
-																	>
-																	<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
-																	<span class="w-full whitespace-pre"
-																		>{@html renderLineContent(row.content, row.kind)}</span
-																	>
-																</div>
-															{:else}
-																<!-- Context -->
-																<div
-																	class="flex h-full items-center border-r border-white/10 bg-transparent px-2 opacity-65"
-																>
-																	<span
-																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
-																		>{row.oldNumber}</span
-																	>
-																	<span class="w-3 shrink-0 select-none"></span>
-																	<span class="w-full whitespace-pre"
-																		>{@html renderLineContent(row.content, row.kind)}</span
-																	>
-																</div>
-																<div
-																	class="flex h-full items-center border-r border-white/10 bg-transparent px-2 opacity-65"
-																>
-																	<span
-																		class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
-																		>{row.newNumber}</span
-																	>
-																	<span class="w-3 shrink-0 select-none"></span>
-																	<span class="w-full whitespace-pre"
-																		>{@html renderLineContent(row.content, row.kind)}</span
-																	>
-																</div>
 															{/if}
-														</div>
-													{:else}
-														<div class="p-8 text-center text-xs opacity-40 italic">
-															No differences found. Code is identical.
-														</div>
-													{/each}
+														{/each}
+													</div>
+
+													<!-- Right Pane (Modified) -->
+													<div
+														id="manual-diff-right-{comp.id}"
+														class="vscode-scrollbar h-full min-w-0 flex-1 overflow-auto bg-black/95 p-2"
+														onscroll={(e) => handleScroll(e, `manual-diff-left-${comp.id}`)}
+													>
+														{#each diffRows as row (row.key)}
+															<div
+																class="flex min-h-[19px] items-center border-b border-white/5 transition-colors hover:bg-white/5"
+															>
+																{#if row.kind === 'add'}
+																	<div
+																		class="flex h-full w-full items-center bg-[#1b2f1c] px-2 text-[#80ff80]"
+																	>
+																		<span
+																			class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-30 select-none"
+																			>{row.newNumber}</span
+																		>
+																		<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
+																		<span class="w-full whitespace-pre"
+																			>{@html renderLineContent(row.content)}</span
+																		>
+																	</div>
+																{:else if row.kind === 'remove'}
+																	<div
+																		class="h-full w-full opacity-35 select-none"
+																		style="background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.02) 5px, rgba(255,255,255,0.02) 10px); min-height: 18px;"
+																	></div>
+																{:else}
+																	<!-- Context -->
+																	<div
+																		class="flex h-full w-full items-center bg-transparent px-2 opacity-65"
+																	>
+																		<span
+																			class="w-9 shrink-0 pr-2 text-right font-mono text-[9px] opacity-20 select-none"
+																			>{row.newNumber}</span
+																		>
+																		<span class="w-3 shrink-0 select-none"></span>
+																		<span class="w-full whitespace-pre"
+																			>{@html renderLineContent(row.content)}</span
+																		>
+																	</div>
+																{/if}
+															</div>
+														{:else}
+															<div class="p-8 text-center text-xs opacity-40 italic">
+																No differences found. Code is identical.
+															</div>
+														{/each}
+													</div>
 												</div>
 											{:else}
 												<!-- Inline layout -->
@@ -3853,7 +4043,9 @@
 																	>
 																	<span class="w-9 shrink-0"></span>
 																	<span class="shrink-0 pr-2 opacity-40 select-none">-</span>
-																	<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
+																	<span class="whitespace-pre"
+																		>{@html renderLineContent(row.content)}</span
+																	>
 																</div>
 															{:else if row.kind === 'add'}
 																<div
@@ -3865,7 +4057,9 @@
 																		>{row.newNumber}</span
 																	>
 																	<span class="shrink-0 pr-2 opacity-40 select-none">+</span>
-																	<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
+																	<span class="whitespace-pre"
+																		>{@html renderLineContent(row.content)}</span
+																	>
 																</div>
 															{:else}
 																<!-- Context -->
@@ -3881,7 +4075,9 @@
 																		>{row.newNumber}</span
 																	>
 																	<span class="w-3 shrink-0"></span>
-																	<span class="whitespace-pre">{@html renderLineContent(row.content, row.kind)}</span>
+																	<span class="whitespace-pre"
+																		>{@html renderLineContent(row.content)}</span
+																	>
 																</div>
 															{/if}
 														</div>
@@ -3981,7 +4177,7 @@
 													BACKED-UP MODIFICATIONS
 												</h4>
 												<div class="flex flex-col gap-2">
-													{#each task.files as file}
+													{#each task.files as file (file)}
 														<div
 															class="flex flex-col gap-2 rounded-xl border border-base-content/10 bg-base-200/40 p-3.5"
 														>
@@ -4164,7 +4360,7 @@
 													AFFECTED CODE SYMBOLS
 												</h4>
 												<div class="flex flex-wrap gap-1.5">
-													{#each task.functions as func}
+													{#each task.functions as func (func)}
 														<span
 															class="badge rounded-lg border border-secondary/25 bg-secondary/10 px-2.5 py-2 font-mono badge-sm text-[10px] font-bold tracking-wide text-secondary"
 															>{func}()</span
@@ -4197,7 +4393,7 @@
 <!-- Staging Drag Floating Ghost -->
 {#if dragState && dragHasMoved}
 	<div
-		class="pointer-events-none fixed top-0 left-0 z-[9999] select-none"
+		class="pointer-events-none fixed top-0 left-0 z-9999 select-none"
 		style="transform: translate({dragState.curX - dragState.offsetX}px, {dragState.curY -
 			dragState.offsetY}px) rotate(1.5deg) scale(1.03); will-change: transform; width: {dragState.cardW}px;"
 	>

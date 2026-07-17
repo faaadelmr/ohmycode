@@ -26,13 +26,13 @@ export const GET: RequestHandler = async () => {
 		} else {
 			return json({ success: false, error: 'User cancelled folder selection' });
 		}
-	} catch (error: any) {
+	} catch (error) {
 		console.error('Native Picker Error:', error);
 		return json(
 			{
 				success: false,
 				error: 'Failed to open native folder browser',
-				raw: error.message
+				raw: (error as Error).message
 			},
 			{ status: 500 }
 		);

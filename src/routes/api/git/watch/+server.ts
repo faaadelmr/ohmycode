@@ -1,4 +1,3 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import fs from 'fs';
 import path from 'path';
@@ -27,7 +26,7 @@ export const GET: RequestHandler = ({ url }) => {
 					// Standard SSE format
 					const chunk = `event: ${event}\ndata: ${data}\n\n`;
 					controller.enqueue(encoder.encode(chunk));
-				} catch (e) {
+				} catch {
 					closed = true;
 				}
 			};
@@ -44,7 +43,8 @@ export const GET: RequestHandler = ({ url }) => {
 					const isSvelteKit = filename.includes('.svelte-kit');
 					const isNodeModules = filename.includes('node_modules');
 					const isOhMyCode = filename.includes('.ohmycode');
-					const isGitOther = filename.includes('.git') && !filename.endsWith('index') && !filename.endsWith('HEAD');
+					const isGitOther =
+						filename.includes('.git') && !filename.endsWith('index') && !filename.endsWith('HEAD');
 
 					if (isSvelteKit || isNodeModules || isOhMyCode || isGitOther) return;
 
@@ -81,7 +81,7 @@ export const GET: RequestHandler = ({ url }) => {
 		headers: {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache',
-			'Connection': 'keep-alive',
+			Connection: 'keep-alive',
 			'X-Accel-Buffering': 'no' // Disable buffering for Nginx/Proxies
 		}
 	});
