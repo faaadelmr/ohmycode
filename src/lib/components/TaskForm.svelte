@@ -260,6 +260,40 @@
 		});
 	};
 
+	const fetchComparisons = async () => {
+		try {
+			const res = await fetch('/api/comparisons');
+			const data = await res.json();
+			if (data.success) {
+				manualComparisons = data.comparisons;
+			}
+		} catch (e) {
+			console.error('Failed to fetch comparisons', e);
+		}
+	};
+
+	const saveComparison = async (comp: ManualComparison) => {
+		try {
+			const res = await fetch('/api/comparisons', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(comp)
+			});
+			const data = await res.json();
+			if (data.success) {
+				manualComparisons = data.comparisons;
+				openTabs = openTabs.map((t) => {
+					if (t.type === 'manual-compare' && t.comparisonId === comp.id) {
+						return { ...t, title: comp.title };
+					}
+					return t;
+				});
+			}
+		} catch (e) {
+			console.error('Failed to save comparison', e);
+		}
+	};
+
 	const createManualComparison = () => {
 		const id = `compare-${Date.now()}`;
 		const index = manualComparisons.length + 1;
@@ -271,19 +305,33 @@
 			viewMode: 'edit',
 			layout: 'split'
 		};
-		manualComparisons.push(newItem);
-		openTab({
-			id: `manual-compare-${id}`,
-			type: 'manual-compare',
-			title: newItem.title,
-			comparisonId: id
+		saveComparison(newItem).then(() => {
+			openTab({
+				id: `manual-compare-${id}`,
+				type: 'manual-compare',
+				title: newItem.title,
+				comparisonId: id
+			});
 		});
 	};
 
-	const deleteManualComparison = (e: MouseEvent, id: string) => {
+	const deleteManualComparison = async (e: MouseEvent, id: string) => {
 		e.stopPropagation();
-		manualComparisons = manualComparisons.filter((c) => c.id !== id);
-		closeTab(e, `manual-compare-${id}`);
+		if (!confirm('Are you sure you want to delete this comparison?')) return;
+		try {
+			const res = await fetch('/api/comparisons', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ id })
+			});
+			const data = await res.json();
+			if (data.success) {
+				manualComparisons = data.comparisons;
+				closeTab(e, `manual-compare-${id}`);
+			}
+		} catch (err) {
+			console.error('Failed to delete comparison', err);
+		}
 	};
 
 	const loadChangeDiff = async (item: GitChangeItem, isStaged: boolean) => {
@@ -485,19 +533,16 @@
 		syncWithGit();
 	};
 
-	$effect(() => {
-		localStorage.setItem('ohmycode-manual-comparisons', JSON.stringify(manualComparisons));
-	});
+	let compareSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+	const debouncedSaveComparison = (comp: ManualComparison) => {
+		if (compareSaveTimeout) clearTimeout(compareSaveTimeout);
+		compareSaveTimeout = setTimeout(() => {
+			saveComparison(comp);
+		}, 600);
+	};
 
 	onMount(() => {
-		const storedComparisons = localStorage.getItem('ohmycode-manual-comparisons');
-		if (storedComparisons) {
-			try {
-				manualComparisons = JSON.parse(storedComparisons);
-			} catch (e) {
-				console.error('Failed to parse manual comparisons', e);
-			}
-		}
+		fetchComparisons();
 
 		const storedProjects = localStorage.getItem('ohmycode-recent-projects');
 		if (storedProjects) {
@@ -731,6 +776,8 @@
 
 	let activeEditor: MonacoEditorInstance | null = null;
 	const initMonaco = (node: HTMLElement, snItem: Snippet) => {
+		let saveTimeout: ReturnType<typeof setTimeout> | undefined;
+
 		loadMonaco().then((monacoInstance) => {
 			if (activeEditor) {
 				activeEditor.dispose();
@@ -758,10 +805,19 @@
 				fontSize: 12,
 				fontFamily: 'Fira Code, Consolas, Monaco, monospace',
 				lineHeight: 20,
-				padding: { top: 8, bottom: 8 }
+				padding: { top: 8, bottom: 8 },
+				quickSuggestions: false,
+				suggestOnTriggerCharacters: false,
+				acceptSuggestionOnEnter: 'off',
+				wordBasedSuggestions: 'off',
+				parameterHints: { enabled: false },
+				autoClosingBrackets: 'never',
+				autoClosingQuotes: 'never',
+				autoSurround: 'never',
+				tabCompletion: 'off',
+				snippetSuggestions: 'none'
 			});
 
-			let saveTimeout: ReturnType<typeof setTimeout> | undefined;
 			activeEditor.onDidChangeModelContent(() => {
 				const val = activeEditor ? activeEditor.getValue() : '';
 				clearTimeout(saveTimeout);
@@ -773,8 +829,13 @@
 
 		return {
 			update(newSnItem: Snippet) {
-				if (activeEditor && activeEditor.getValue() !== newSnItem.content) {
-					activeEditor.setValue(newSnItem.content);
+				snItem = newSnItem;
+				if (activeEditor) {
+					const currentVal = activeEditor.getValue().replace(/\r\n/g, '\n');
+					const newVal = newSnItem.content.replace(/\r\n/g, '\n');
+					if (currentVal !== newVal && !activeEditor.hasTextFocus()) {
+						activeEditor.setValue(newSnItem.content);
+					}
 				}
 				if (activeEditor) {
 					let lang = newSnItem.language;
@@ -798,6 +859,12 @@
 				}
 			},
 			destroy() {
+				if (saveTimeout) {
+					clearTimeout(saveTimeout);
+					if (activeEditor) {
+						saveSnippet({ ...snItem, content: activeEditor.getValue() });
+					}
+				}
 				if (activeEditor) {
 					activeEditor.dispose();
 					activeEditor = null;
@@ -2554,25 +2621,32 @@
 										class="group flex cursor-pointer flex-col gap-1 rounded-xl border border-transparent p-2.5 text-left transition-all hover:border-base-content/5 hover:bg-base-content/5"
 									>
 										<div class="flex items-center justify-between">
-											<span
-												class="badge max-w-30 truncate rounded border border-secondary/30 bg-secondary/15 px-1.5 font-mono badge-xs text-[7px] font-bold tracking-wide text-secondary uppercase"
+											<p
+												class="truncate text-xs leading-snug font-bold text-base-content/90 transition-colors group-hover:text-primary flex-1 mr-2"
 											>
 												{task.title}
-											</span>
-											<span class="font-mono text-[9px] opacity-35">
-												{new Date(task.createdAt).toLocaleTimeString('en-GB', {
+											</p>
+											<span class="font-mono text-[9px] opacity-35 shrink-0">
+												{new Date(task.createdAt).toLocaleString('en-GB', {
+													day: '2-digit',
+													month: '2-digit',
+													year: '2-digit',
 													hour: '2-digit',
 													minute: '2-digit'
 												})}
 											</span>
 										</div>
-										<p
-											class="truncate text-xs leading-snug font-bold text-base-content/90 transition-colors group-hover:text-primary"
-										>
-											{task.description || 'No Description'}
-										</p>
+										{#if task.projectPath}
+											<div 
+												class="max-w-full truncate font-mono text-[9px] opacity-40 flex items-center gap-1 mt-0.5"
+												title={task.projectPath}
+											>
+												<span>📁</span>
+												<span>{task.projectPath.split(/[/\\]/).pop() || task.projectPath}</span>
+											</div>
+										{/if}
 										{#if task.notes}
-											<p class="max-w-full truncate font-mono text-[10px] opacity-50">
+											<p class="max-w-full truncate font-mono text-[10px] opacity-50 mt-0.5">
 												{task.notes.replace(/[\n\r]+/g, ' ')}
 											</p>
 										{/if}
@@ -4242,7 +4316,11 @@
 									<div class="flex items-center gap-3">
 										<input
 											type="text"
-											bind:value={manualComparisons[compIndex].title}
+											value={manualComparisons[compIndex].title}
+											onchange={(e) => {
+												manualComparisons[compIndex].title = e.currentTarget.value;
+												saveComparison(manualComparisons[compIndex]);
+											}}
 											class="input input-xs w-48 rounded border border-base-content/10 bg-base-100 text-xs font-bold"
 											placeholder="Comparison Name"
 										/>
@@ -4251,7 +4329,10 @@
 										<div class="mr-2 flex items-center rounded-lg bg-base-content/5 px-2 py-0.5">
 											<span class="mr-2 text-[10px] font-bold uppercase opacity-60">Mode</span>
 											<button
-												onclick={() => (manualComparisons[compIndex].viewMode = 'edit')}
+												onclick={() => {
+													manualComparisons[compIndex].viewMode = 'edit';
+													saveComparison(manualComparisons[compIndex]);
+												}}
 												class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.viewMode ===
 												'edit'
 													? 'btn-primary'
@@ -4260,7 +4341,10 @@
 												Edit Code
 											</button>
 											<button
-												onclick={() => (manualComparisons[compIndex].viewMode = 'diff')}
+												onclick={() => {
+													manualComparisons[compIndex].viewMode = 'diff';
+													saveComparison(manualComparisons[compIndex]);
+												}}
 												class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.viewMode ===
 												'diff'
 													? 'btn-primary'
@@ -4274,7 +4358,10 @@
 											<div class="flex items-center rounded-lg bg-base-content/5 px-2 py-0.5">
 												<span class="mr-2 text-[10px] font-bold uppercase opacity-60">Layout</span>
 												<button
-													onclick={() => (manualComparisons[compIndex].layout = 'split')}
+													onclick={() => {
+														manualComparisons[compIndex].layout = 'split';
+														saveComparison(manualComparisons[compIndex]);
+													}}
 													class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.layout ===
 													'split'
 														? 'btn-primary'
@@ -4283,7 +4370,10 @@
 													Split
 												</button>
 												<button
-													onclick={() => (manualComparisons[compIndex].layout = 'inline')}
+													onclick={() => {
+														manualComparisons[compIndex].layout = 'inline';
+														saveComparison(manualComparisons[compIndex]);
+													}}
 													class="btn h-5 min-h-5 rounded-md px-1.5 font-bold btn-xs {comp.layout ===
 													'inline'
 														? 'btn-primary'
@@ -4310,7 +4400,11 @@
 													BEFORE (ORIGINAL)
 												</div>
 												<textarea
-													bind:value={manualComparisons[compIndex].beforeCode}
+													value={manualComparisons[compIndex].beforeCode}
+													oninput={(e) => {
+														manualComparisons[compIndex].beforeCode = e.currentTarget.value;
+														debouncedSaveComparison(manualComparisons[compIndex]);
+													}}
 													class="custom-scrollbar w-full flex-1 resize-none rounded border border-white/5 bg-transparent p-2 font-mono text-[11px] leading-relaxed text-[#f8f8f2] focus:outline-none"
 													placeholder="Paste or type original code here..."
 													spellcheck="false"
@@ -4323,7 +4417,11 @@
 													AFTER (MODIFIED)
 												</div>
 												<textarea
-													bind:value={manualComparisons[compIndex].afterCode}
+													value={manualComparisons[compIndex].afterCode}
+													oninput={(e) => {
+														manualComparisons[compIndex].afterCode = e.currentTarget.value;
+														debouncedSaveComparison(manualComparisons[compIndex]);
+													}}
 													class="custom-scrollbar w-full flex-1 resize-none rounded border border-white/5 bg-transparent p-2 font-mono text-[11px] leading-relaxed text-[#f8f8f2] focus:outline-none"
 													placeholder="Paste or type modified code here..."
 													spellcheck="false"

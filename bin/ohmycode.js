@@ -4,6 +4,10 @@ import { spawn, exec } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import os from 'os';
+import SysTrayModule from 'systray2';
+
+const SysTray = SysTrayModule.default || SysTrayModule;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverPath = path.resolve(__dirname, '../build/index.js');
@@ -50,7 +54,7 @@ server.on('error', (err) => {
 	process.exit(1);
 });
 
-// Wait a bit for server to start, then open browser
+// Wait a bit for server to start, then open browser and setup system tray
 setTimeout(() => {
 	if (childExited) {
 		console.error(
@@ -70,6 +74,63 @@ setTimeout(() => {
 	}
 
 	console.log(`\x1b[32m%s\x1b[0m`, `🌼 ohmycode is running in the background on ${url}.`);
-	console.log(`You can close this terminal window.`);
-	process.exit(0);
+	console.log(`System Tray is active. You can close this terminal window.`);
+
+	// Setup System Tray
+	const iconPath = path.join(os.homedir(), '.ohmycode', 'ohmycode_logo.png');
+
+	const itemOpen = {
+		title: 'Open Dashboard',
+		tooltip: 'Open ohmycode in browser',
+		checked: false,
+		enabled: true,
+		click: () => {
+			try {
+				exec(`${start} ${url}`);
+			} catch {}
+		}
+	};
+
+	const itemExit = {
+		title: 'Exit',
+		tooltip: 'Shut down ohmycode server',
+		checked: false,
+		enabled: true,
+		click: () => {
+			try {
+				server.kill();
+			} catch (e) {}
+			systray.kill(false);
+			process.exit(0);
+		}
+	};
+
+	const systray = new SysTray({
+		menu: {
+			icon: fs.existsSync(iconPath) ? iconPath : '',
+			isTemplateIcon: os.platform() === 'darwin',
+			title: 'ohmycode',
+			tooltip: 'ohmycode is running',
+			items: [
+				itemOpen,
+				SysTray.separator,
+				itemExit
+			]
+		},
+		debug: false,
+		copyDir: true
+	});
+
+	systray.onClick(action => {
+		if (action.item.click != null) {
+			action.item.click();
+		}
+	});
+
+	systray.ready().then(() => {
+		console.log(`System Tray loaded successfully.`);
+	}).catch((err) => {
+		console.error('Failed to load system tray:', err.message);
+	});
+
 }, 2000);

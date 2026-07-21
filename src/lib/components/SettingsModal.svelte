@@ -335,10 +335,10 @@
 			</div>
 
 			<!-- Scrollable body -->
-			<div class="custom-scrollbar flex flex-1 flex-col gap-8 overflow-y-auto px-8 py-6">
+			<div class="custom-scrollbar flex flex-1 flex-col gap-6 overflow-y-auto px-8 py-6">
 				<!-- ── Section 1: Storage Location ── -->
-				<section>
-					<div class="mb-4 flex items-center gap-2">
+				<section class="bg-base-200/35 p-5 rounded-2xl flex flex-col gap-3">
+					<div class="flex items-center gap-2">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							width="14"
@@ -366,7 +366,7 @@
 					{:else}
 						<!-- Active path display -->
 						<div
-							class="mb-3 flex items-center gap-2 rounded-2xl border border-base-content/8 bg-base-200/60 px-4 py-3"
+							class="flex items-center gap-2 rounded-xl bg-base-200/60 px-4 py-3"
 						>
 							<svg
 								xmlns="http://www.w3.org/2000/svg"
@@ -418,7 +418,7 @@
 							</button>
 						</div>
 
-						<div class="mt-3 flex gap-2">
+						<div class="mt-2 flex gap-2">
 							<button
 								type="button"
 								class="btn rounded-full border border-base-300 px-4 font-bold btn-ghost btn-xs"
@@ -458,11 +458,9 @@
 					{/if}
 				</section>
 
-				<div class="my-0 h-px bg-base-content/8"></div>
-
-				<!-- ── Section 3: Git Author ── -->
-				<section>
-					<div class="mb-4 flex items-center gap-2">
+				<!-- ── Section 2: Git Author ── -->
+				<section class="bg-base-200/35 p-5 rounded-2xl flex flex-col gap-3">
+					<div class="flex items-center gap-2">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							width="14"
@@ -496,7 +494,7 @@
 						/>
 					</div>
 
-					<div class="mt-3 flex items-center gap-2">
+					<div class="flex items-center gap-2">
 						<label class="flex cursor-pointer items-center gap-2 text-[10px] font-bold opacity-70">
 							<input
 								type="checkbox"
@@ -533,18 +531,16 @@
 							Save Author
 						</button>
 					</div>
-					<div class="mt-2 truncate font-mono text-[10px] opacity-50">
+					<div class="mt-1 truncate font-mono text-[9px] opacity-50">
 						Global Git: {globalGitAuthorName || 'not set'}{globalGitAuthorEmail
 							? ` <${globalGitAuthorEmail}>`
 							: ''}
 					</div>
 				</section>
 
-				<div class="divider my-0 opacity-30"></div>
-
 				<!-- ── Section 3: Export ── -->
-				<section>
-					<div class="mb-4 flex items-center gap-2">
+				<section class="bg-base-200/35 p-5 rounded-2xl flex flex-col gap-3">
+					<div class="flex items-center gap-2">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							width="14"
@@ -565,10 +561,9 @@
 						>
 					</div>
 
-					<p class="mb-4 text-xs leading-relaxed opacity-50">
+					<p class="text-xs leading-relaxed opacity-50">
 						Download all your logs, task data, and backup source files as a single portable
-						<span class="font-mono font-black">.zip</span> archive. Use this to migrate to another machine
-						or keep an offline backup.
+						<span class="font-mono font-black">.zip</span> archive. Use this to migrate to another machine.
 					</p>
 
 					<button
@@ -600,7 +595,7 @@
 					</button>
 
 					{#if exportStats}
-						<div class="mt-3 flex gap-3 text-[10px] font-black opacity-50">
+						<div class="flex gap-3 text-[10px] font-black opacity-50">
 							<span>{exportStats.logs} log files</span>
 							<span>·</span>
 							<span>{exportStats.files} source files</span>
@@ -608,11 +603,9 @@
 					{/if}
 				</section>
 
-				<div class="divider my-0 opacity-30"></div>
-
-				<!-- ── Section 3: Import ── -->
-				<section>
-					<div class="mb-4 flex items-center gap-2">
+				<!-- ── Section 4: Import ── -->
+				<section class="bg-base-200/35 p-5 rounded-2xl flex flex-col gap-3">
+					<div class="flex items-center gap-2">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							width="14"
@@ -633,10 +626,9 @@
 						>
 					</div>
 
-					<p class="mb-4 text-xs leading-relaxed opacity-50">
+					<p class="text-xs leading-relaxed opacity-50">
 						Restore task data and log files from a previously exported
-						<span class="font-mono font-black">ohmycode-backup-*.zip</span> file. Imported tasks will
-						be merged with existing data.
+						<span class="font-mono font-black">ohmycode-backup-*.zip</span> file.
 					</p>
 
 					<div class="flex flex-col gap-3">

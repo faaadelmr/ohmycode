@@ -135,9 +135,6 @@ body,
 .textarea,
 .select,
 .card,
-aside,
-section,
-main,
 [class*='border-base'],
 [class*='border-base-content'],
 [class*='border-primary'],
@@ -251,4 +248,27 @@ main,
 }
 .hover-lift:hover {
 	transform: translateY(-3px);
+}
+
+/* ── Hide thin borders/dividers globally ── */
+.border-base-content\/8,
+.border-base-content\/10,
+.border-b-base-content\/5,
+.border-b-base-content\/10,
+.border-r-base-content\/10,
+.border-r-base-content\/8,
+.border-white\/5,
+.border-base-content\/5,
+.border-base-content\/15,
+.border-base-300 {
+	border-color: transparent !important;
+}
+
+.h-px.bg-base-content\/8,
+.h-px.bg-base-content\/10,
+.h-px.bg-base-content\/5,
+.divider::before,
+.divider::after {
+	background-color: transparent !important;
+	opacity: 0 !important;
 }
