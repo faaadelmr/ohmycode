@@ -1,6 +1,7 @@
 <!-- eslint-disable svelte/no-at-html-tags -->
 <script lang="ts">
 	import { kanbanStore, type DutyTask } from '$lib/kanban.svelte';
+	import favicon from '$lib/assets/favicon.svg';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { theme, themes } from '$lib/theme';
@@ -134,9 +135,9 @@
 	);
 
 	// ── VS Code IDE States ────────────────────────────────────────────────
-	let activeSidebar = $state<'source-control' | 'history' | 'explorer' | 'settings' | 'compare' | 'snippets'>(
-		'source-control'
-	);
+	let activeSidebar = $state<
+		'source-control' | 'history' | 'explorer' | 'settings' | 'compare' | 'snippets'
+	>('source-control');
 	let isSidebarCollapsed = $state(false);
 	let showSettingsModal = $state(false);
 	let diffViewType = $state<'split' | 'inline'>('split');
@@ -716,6 +717,7 @@
 		setValue: (val: string) => void;
 		getModel: () => unknown;
 		onDidChangeModelContent: (cb: () => void) => void;
+		hasTextFocus: () => boolean;
 	}
 
 	interface MonacoInstance {
@@ -754,7 +756,8 @@
 		isMonacoScriptLoading = true;
 		return new Promise((resolve, reject) => {
 			const script = document.createElement('script');
-			script.src = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
+			script.src =
+				'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
 			script.onload = () => {
 				if (w.require) {
 					w.require.config({
@@ -794,7 +797,31 @@
 			else if (lang === 'markdown') lang = 'markdown';
 			else lang = 'plaintext';
 
-			const editorTheme = $theme && ['light', 'cupcake', 'bumblebee', 'emerald', 'corporate', 'retro', 'cyberpunk', 'valentine', 'garden', 'aqua', 'lofi', 'pastel', 'fantasy', 'wireframe', 'cmyk', 'autumn', 'acid', 'lemonade', 'winter'].includes($theme) ? 'vs' : 'vs-dark';
+			const editorTheme =
+				$theme &&
+				[
+					'light',
+					'cupcake',
+					'bumblebee',
+					'emerald',
+					'corporate',
+					'retro',
+					'cyberpunk',
+					'valentine',
+					'garden',
+					'aqua',
+					'lofi',
+					'pastel',
+					'fantasy',
+					'wireframe',
+					'cmyk',
+					'autumn',
+					'acid',
+					'lemonade',
+					'winter'
+				].includes($theme)
+					? 'vs'
+					: 'vs-dark';
 
 			activeEditor = monacoInstance.editor.create(node, {
 				value: snItem.content,
@@ -958,7 +985,7 @@
 			if (latest) {
 				openSnippetTab(latest);
 			} else {
-				const found = snippets.find(s => s.title === title);
+				const found = snippets.find((s) => s.title === title);
 				if (found) openSnippetTab(found);
 			}
 		});
@@ -2622,11 +2649,11 @@
 									>
 										<div class="flex items-center justify-between">
 											<p
-												class="truncate text-xs leading-snug font-bold text-base-content/90 transition-colors group-hover:text-primary flex-1 mr-2"
+												class="mr-2 flex-1 truncate text-xs leading-snug font-bold text-base-content/90 transition-colors group-hover:text-primary"
 											>
 												{task.title}
 											</p>
-											<span class="font-mono text-[9px] opacity-35 shrink-0">
+											<span class="shrink-0 font-mono text-[9px] opacity-35">
 												{new Date(task.createdAt).toLocaleString('en-GB', {
 													day: '2-digit',
 													month: '2-digit',
@@ -2637,8 +2664,8 @@
 											</span>
 										</div>
 										{#if task.projectPath}
-											<div 
-												class="max-w-full truncate font-mono text-[9px] opacity-40 flex items-center gap-1 mt-0.5"
+											<div
+												class="mt-0.5 flex max-w-full items-center gap-1 truncate font-mono text-[9px] opacity-40"
 												title={task.projectPath}
 											>
 												<span>📁</span>
@@ -2646,7 +2673,7 @@
 											</div>
 										{/if}
 										{#if task.notes}
-											<p class="max-w-full truncate font-mono text-[10px] opacity-50 mt-0.5">
+											<p class="mt-0.5 max-w-full truncate font-mono text-[10px] opacity-50">
 												{task.notes.replace(/[\n\r]+/g, ' ')}
 											</p>
 										{/if}
@@ -3045,9 +3072,7 @@
 							<!-- List of snippets -->
 							<div class="vscode-scrollbar flex flex-1 flex-col gap-1.5 overflow-y-auto">
 								{#if isLoadingSnippets}
-									<div class="py-12 text-center text-xs opacity-40">
-										Loading snippets...
-									</div>
+									<div class="py-12 text-center text-xs opacity-40">Loading snippets...</div>
 								{:else}
 									{#each filteredSnippets as sn (sn.id)}
 										<div
@@ -3055,7 +3080,10 @@
 											tabindex="0"
 											onclick={() => openSnippetTab(sn)}
 											onkeydown={(e) => e.key === 'Enter' && openSnippetTab(sn)}
-											class="group flex cursor-pointer flex-col gap-1 rounded-xl border bg-base-100 p-2.5 text-left transition-all hover:bg-base-300 hover:border-primary/20 {activeTabId === `snippet-${sn.id}` ? 'border-primary/35 bg-primary/5 text-primary' : 'border-base-content/10'}"
+											class="group flex cursor-pointer flex-col gap-1 rounded-xl border bg-base-100 p-2.5 text-left transition-all hover:border-primary/20 hover:bg-base-300 {activeTabId ===
+											`snippet-${sn.id}`
+												? 'border-primary/35 bg-primary/5 text-primary'
+												: 'border-base-content/10'}"
 										>
 											<div class="flex items-center justify-between">
 												<span
@@ -3070,7 +3098,7 @@
 															e.stopPropagation();
 															copyToClipboard(sn.content);
 														}}
-														class="btn btn-square btn-ghost btn-xs opacity-0 group-hover:opacity-100 text-base-content/60 hover:text-primary"
+														class="btn btn-square text-base-content/60 opacity-0 btn-ghost btn-xs group-hover:opacity-100 hover:text-primary"
 														title="Copy code to clipboard"
 													>
 														<svg
@@ -3083,7 +3111,8 @@
 															stroke-width="2"
 														>
 															<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-															<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+															<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+															></path>
 														</svg>
 													</button>
 													<!-- Delete button -->
@@ -3092,7 +3121,7 @@
 															e.stopPropagation();
 															deleteSnippet(sn.id);
 														}}
-														class="btn btn-square btn-ghost btn-xs opacity-0 group-hover:opacity-100 text-error/60 hover:bg-error/10 hover:text-error"
+														class="btn btn-square text-error/60 opacity-0 btn-ghost btn-xs group-hover:opacity-100 hover:bg-error/10 hover:text-error"
 														title="Delete snippet"
 													>
 														✕
@@ -3289,18 +3318,7 @@
 								<div
 									class="flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br from-primary to-secondary text-primary-content shadow-xl shadow-primary/10"
 								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="h-8 w-8"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-										></path><polyline points="14 2 14 8 20 8"></polyline></svg
-									>
+									<img src={favicon} class="h-13 w-13 object-contain" alt="ohmycode logo" />
 								</div>
 								<div class="text-left">
 									<h1
@@ -3531,9 +3549,7 @@
 											<!-- Vertical line connecting dots -->
 											{#if index < gitCommits.length - 1}
 												<div
-													class="absolute top-6 -bottom-6 left-3.25 w-0.5 {isCommitOutgoing(
-														index
-													)
+													class="absolute top-6 -bottom-6 left-3.25 w-0.5 {isCommitOutgoing(index)
 														? 'bg-primary'
 														: 'bg-secondary/40'}"
 												></div>
@@ -3757,9 +3773,7 @@
 										<div class="relative py-1 pl-7">
 											<!-- Vertical line connecting dots -->
 											{#if index < kanbanStore.tasks.length - 1}
-												<div
-													class="absolute top-6 -bottom-6 left-3.25 w-0.5 bg-success/30"
-												></div>
+												<div class="absolute top-6 -bottom-6 left-3.25 w-0.5 bg-success/30"></div>
 											{/if}
 
 											<!-- Colored Dot -->
@@ -4645,7 +4659,9 @@
 									class="flex h-9 shrink-0 items-center justify-between border-b border-base-content/10 bg-base-200 px-4 text-xs select-none"
 								>
 									<div class="flex items-center gap-3">
-										<span class="font-mono text-[10px] font-black tracking-widest uppercase opacity-45">
+										<span
+											class="font-mono text-[10px] font-black tracking-widest uppercase opacity-45"
+										>
 											Editing Snippet
 										</span>
 									</div>
@@ -4659,7 +4675,7 @@
 										</button>
 										<button
 											onclick={() => deleteSnippet(sn.id)}
-											class="btn h-6 rounded-md px-2.5 text-[10px] font-bold btn-error btn-outline btn-xs"
+											class="btn h-6 rounded-md px-2.5 text-[10px] font-bold btn-outline btn-xs btn-error"
 											title="Delete snippet"
 										>
 											Delete
@@ -4669,27 +4685,33 @@
 
 								<!-- Snippet Form Editor Area -->
 								<div class="vscode-scrollbar flex-1 overflow-y-auto p-6 text-left">
-									<div class="mx-auto max-w-4xl flex flex-col gap-5">
+									<div class="mx-auto flex max-w-4xl flex-col gap-5">
 										<div class="flex flex-col gap-2">
-											<label class="text-[10px] font-black tracking-widest uppercase opacity-45" for="snippet-title-input">Title</label>
+											<label
+												class="text-[10px] font-black tracking-widest uppercase opacity-45"
+												for="snippet-title-input">Title</label
+											>
 											<input
 												id="snippet-title-input"
 												type="text"
 												value={sn.title}
 												onchange={(e) => saveSnippet({ ...sn, title: e.currentTarget.value })}
 												placeholder="Enter snippet title..."
-												class="input input-bordered w-full rounded-lg bg-base-100 text-sm font-bold focus:border-primary focus:ring-1 focus:ring-primary"
+												class="input-bordered input w-full rounded-lg bg-base-100 text-sm font-bold focus:border-primary focus:ring-1 focus:ring-primary"
 											/>
 										</div>
 
-										<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+										<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 											<div class="flex flex-col gap-2">
-												<label class="text-[10px] font-black tracking-widest uppercase opacity-45" for="snippet-lang-select">Language</label>
+												<label
+													class="text-[10px] font-black tracking-widest uppercase opacity-45"
+													for="snippet-lang-select">Language</label
+												>
 												<select
 													id="snippet-lang-select"
 													value={sn.language}
 													onchange={(e) => saveSnippet({ ...sn, language: e.currentTarget.value })}
-													class="select select-bordered w-full rounded-lg bg-base-100 text-xs font-bold"
+													class="select-bordered select w-full rounded-lg bg-base-100 text-xs font-bold"
 												>
 													<option value="sql">SQL</option>
 													<option value="javascript">JavaScript / TypeScript</option>
@@ -4704,29 +4726,38 @@
 											</div>
 
 											<div class="flex flex-col gap-2">
-												<label class="text-[10px] font-black tracking-widest uppercase opacity-45" for="snippet-desc-input">Description / Notes</label>
+												<label
+													class="text-[10px] font-black tracking-widest uppercase opacity-45"
+													for="snippet-desc-input">Description / Notes</label
+												>
 												<input
 													id="snippet-desc-input"
 													type="text"
 													value={sn.description || ''}
-													onchange={(e) => saveSnippet({ ...sn, description: e.currentTarget.value })}
+													onchange={(e) =>
+														saveSnippet({ ...sn, description: e.currentTarget.value })}
 													placeholder="Add quick notes..."
-													class="input input-bordered w-full rounded-lg bg-base-100 text-xs"
+													class="input-bordered input w-full rounded-lg bg-base-100 text-xs"
 												/>
 											</div>
 										</div>
 
-										<div class="flex flex-col gap-2 flex-1 min-h-100">
-											<label class="text-[10px] font-black tracking-widest uppercase opacity-45" for="snippet-code-area">Code / Query / Syntax</label>
-											<div class="relative flex-1 min-h-100 rounded-xl overflow-hidden border border-base-content/10 bg-[#0f141c]">
+										<div class="flex min-h-100 flex-1 flex-col gap-2">
+											<label
+												class="text-[10px] font-black tracking-widest uppercase opacity-45"
+												for="snippet-code-area">Code / Query / Syntax</label
+											>
+											<div
+												class="relative min-h-100 flex-1 overflow-hidden rounded-xl border border-base-content/10 bg-[#0f141c]"
+											>
 												{#if monacoLoaded}
-													<div use:initMonaco={sn} class="w-full h-full min-h-100"></div>
+													<div use:initMonaco={sn} class="h-full min-h-100 w-full"></div>
 												{:else}
 													<textarea
 														id="snippet-code-area"
 														value={sn.content}
 														oninput={(e) => saveSnippet({ ...sn, content: e.currentTarget.value })}
-														class="w-full h-full min-h-100 resize-y bg-[#0f141c] p-4 font-mono text-xs leading-relaxed text-[#f8f8f2] focus:outline-none"
+														class="h-full min-h-100 w-full resize-y bg-[#0f141c] p-4 font-mono text-xs leading-relaxed text-[#f8f8f2] focus:outline-none"
 														placeholder="Loading Monaco Editor..."
 														spellcheck="false"
 													></textarea>
@@ -4734,7 +4765,7 @@
 											</div>
 										</div>
 
-										<div class="text-[10px] opacity-35 font-mono text-right mt-2">
+										<div class="mt-2 text-right font-mono text-[10px] opacity-35">
 											<span>Created: {new Date(sn.createdAt).toLocaleString()}</span>
 											<span class="mx-2">|</span>
 											<span>Updated: {new Date(sn.updatedAt).toLocaleString()}</span>

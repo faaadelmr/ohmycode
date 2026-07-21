@@ -76,8 +76,10 @@ setTimeout(() => {
 	console.log(`\x1b[32m%s\x1b[0m`, `🌼 ohmycode is running in the background on ${url}.`);
 	console.log(`System Tray is active. You can close this terminal window.`);
 
-	// Setup System Tray
-	const iconPath = path.join(os.homedir(), '.ohmycode', 'ohmycode_logo.png');
+	const iconPath = path.resolve(
+		__dirname,
+		os.platform() === 'win32' ? 'ohmycode_logo.ico' : 'ohmycode_logo.png'
+	);
 
 	const itemOpen = {
 		title: 'Open Dashboard',
@@ -87,7 +89,9 @@ setTimeout(() => {
 		click: () => {
 			try {
 				exec(`${start} ${url}`);
-			} catch {}
+			} catch {
+				// Ignore browser open errors
+			}
 		}
 	};
 
@@ -99,7 +103,9 @@ setTimeout(() => {
 		click: () => {
 			try {
 				server.kill();
-			} catch (e) {}
+			} catch {
+				// Ignore server kill errors
+			}
 			systray.kill(false);
 			process.exit(0);
 		}
@@ -111,26 +117,24 @@ setTimeout(() => {
 			isTemplateIcon: os.platform() === 'darwin',
 			title: 'ohmycode',
 			tooltip: 'ohmycode is running',
-			items: [
-				itemOpen,
-				SysTray.separator,
-				itemExit
-			]
+			items: [itemOpen, SysTray.separator, itemExit]
 		},
 		debug: false,
 		copyDir: true
 	});
 
-	systray.onClick(action => {
+	systray.onClick((action) => {
 		if (action.item.click != null) {
 			action.item.click();
 		}
 	});
 
-	systray.ready().then(() => {
-		console.log(`System Tray loaded successfully.`);
-	}).catch((err) => {
-		console.error('Failed to load system tray:', err.message);
-	});
-
+	systray
+		.ready()
+		.then(() => {
+			console.log(`System Tray loaded successfully.`);
+		})
+		.catch((err) => {
+			console.error('Failed to load system tray:', err.message);
+		});
 }, 2000);
