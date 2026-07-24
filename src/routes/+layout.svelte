@@ -2,14 +2,11 @@
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { theme } from '$lib/theme';
-	import { onMount } from 'svelte';
-	import { normalizeViewport } from '@faaadelmr/css-viewport';
+
+
 
 	let { children } = $props();
 
-	onMount(() => {
-		normalizeViewport();
-	});
 </script>
 
 <svelte:head>

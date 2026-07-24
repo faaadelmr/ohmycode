@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { smoothTransitionV2 } from 'smooth-transitionv2';
+
 	let {
 		branch = 'main',
 		isSyncing = false,
@@ -16,6 +18,10 @@
 		onSync?: () => void;
 		onOpenSettings?: () => void;
 	} = $props();
+
+	const handleEasterEgg = () => {
+		smoothTransitionV2({ appName: 'ohmycode', enableSmooth: true, smoothDuration: 600 });
+	};
 </script>
 
 <footer
@@ -98,5 +104,15 @@
 		>
 			UTF-8
 		</button>
+
+		<a
+			href="https://faaadelmr.dev"
+			target="_blank"
+			rel="noopener noreferrer"
+			onclick={handleEasterEgg}
+			class="flex h-full items-center px-1 text-[8px] transition-colors hover:bg-white/10 hover:underline"
+		>
+			Crafted by faaadelmr
+		</a>
 	</div>
 </footer>

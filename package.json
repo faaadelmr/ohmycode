@@ -50,6 +50,7 @@
 	"dependencies": {
 		"@faaadelmr/css-viewport": "^1.0.0",
 		"adm-zip": "^0.5.17",
+		"smooth-transitionv2": "^1.0.4",
 		"systray2": "^2.1.4"
 	}
 }
