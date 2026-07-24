@@ -81,6 +81,17 @@ setTimeout(() => {
 		os.platform() === 'win32' ? 'ohmycode_logo.ico' : 'ohmycode_logo.png'
 	);
 
+	const iconBase64 = fs.existsSync(iconPath)
+		? fs.readFileSync(iconPath).toString('base64')
+		: '';
+
+	const itemHeader = {
+		title: `ohmycode (Port ${port})`,
+		tooltip: 'ohmycode Server Status',
+		checked: false,
+		enabled: false
+	};
+
 	const itemOpen = {
 		title: 'Open Dashboard',
 		tooltip: 'Open ohmycode in browser',
@@ -96,7 +107,7 @@ setTimeout(() => {
 	};
 
 	const itemExit = {
-		title: 'Exit',
+		title: 'Quit',
 		tooltip: 'Shut down ohmycode server',
 		checked: false,
 		enabled: true,
@@ -113,19 +124,21 @@ setTimeout(() => {
 
 	const systray = new SysTray({
 		menu: {
-			icon: fs.existsSync(iconPath) ? iconPath : '',
+			icon: iconBase64,
 			isTemplateIcon: os.platform() === 'darwin',
 			title: 'ohmycode',
-			tooltip: 'ohmycode is running',
-			items: [itemOpen, SysTray.separator, itemExit]
+			tooltip: `ohmycode (Port ${port})`,
+			items: [itemHeader, SysTray.separator, itemOpen, SysTray.separator, itemExit]
 		},
 		debug: false,
 		copyDir: true
 	});
 
 	systray.onClick((action) => {
-		if (action.item.click != null) {
-			action.item.click();
+		if (action.item && action.item.title === 'Open Dashboard') {
+			itemOpen.click();
+		} else if (action.item && (action.item.title === 'Quit' || action.item.title === 'Exit')) {
+			itemExit.click();
 		}
 	});
 

@@ -12,6 +12,7 @@ function runGitCommand(args: string[], options: GitExecOptions = {}) {
 		maxBuffer: options.maxBuffer ?? 1024 * 1024,
 		timeout: options.timeout ?? 5000,
 		env: options.env,
+		windowsHide: true,
 		stdio: ['ignore', 'pipe', 'pipe']
 	} as ExecFileSyncOptions).toString();
 }

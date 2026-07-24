@@ -1,34 +1,46 @@
 # ohmycode
 
-Modern, Playful, Colorful Interactive Website.
+Modern, playful, and colorful interactive Git & Kanban workspace for developers.
 
-Built with:
+## Installation & Usage
 
-- **Framework:** SvelteKit (Svelte 5)
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS 4 + DaisyUI 5
-- **Icons/Assets:** Custom SVG
+### 1. Global Installation (Recommended)
+
+Install `ohmycode` globally via npm:
+
+```bash
+npm install -g ohmycode
+```
+
+Run `ohmycode` anywhere in your terminal:
+
+```bash
+ohmycode
+```
+
+### 2. Direct Execution via npx
+
+Alternatively, run `ohmycode` directly without global installation:
+
+```bash
+npx ohmycode
+```
+
+---
 
 ## Features
 
-- **Dynamic Theming:** Over 30 colorful themes to choose from.
-- **Interactive UI:** Smooth transitions and playful elements using Svelte's animation system.
-- **Responsive Design:** Optimized for all screen sizes.
+- **System Tray Integration:** Runs silently in the background with a system tray menu (Open Dashboard, Quit).
+- **Git & Kanban Workflow:** Manage Git commits, changes, and tasks in a unified VS Code-inspired interface.
+- **Native Folder Selector:** Easily switch workspaces with native OS folder browser dialogs.
+- **Dynamic Theming:** Over 30 vibrant themes powered by Svelte 5, Tailwind CSS 4, & DaisyUI.
 
-## Getting Started
+---
+
+## Options
+
+Custom port configuration:
 
 ```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
+ohmycode --port 9966
 ```
-
-## Theme Switching
-
-Themes are managed via a Svelte store in `src/lib/theme.ts` and persisted in `localStorage`.
-You can toggle themes using the dropdown in the navigation bar.

@@ -16,8 +16,9 @@ export const GET: RequestHandler = async () => {
 			}
 		`;
 
-		const output = execFileSync('powershell', ['-NoProfile', '-Command', psScript], {
+		const output = execFileSync('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psScript], {
 			encoding: 'utf8',
+			windowsHide: true,
 			timeout: 60000 // 1 minute timeout in case the user leaves it open
 		}).trim();
 
