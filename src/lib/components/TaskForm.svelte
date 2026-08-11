@@ -8,6 +8,12 @@
 	import CommitForm from './CommitForm.svelte';
 	import SettingsModal from './SettingsModal.svelte';
 	import StatusBar from './StatusBar.svelte';
+	import ExcelGrid from './ExcelGrid.svelte';
+	import {
+		getInitialSheets,
+		saveSheetsToStorage,
+		type ExcelSheet
+	} from '$lib/excelStore';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	let title = $state('');
@@ -136,7 +142,7 @@
 
 	// ── VS Code IDE States ────────────────────────────────────────────────
 	let activeSidebar = $state<
-		'source-control' | 'history' | 'explorer' | 'settings' | 'compare' | 'snippets'
+		'source-control' | 'history' | 'explorer' | 'settings' | 'compare' | 'snippets' | 'excel'
 	>('source-control');
 	let isSidebarCollapsed = $state(false);
 	let showSettingsModal = $state(false);
@@ -156,17 +162,77 @@
 
 	type Tab = {
 		id: string;
-		type: 'welcome' | 'diff' | 'log' | 'manual-compare' | 'snippet';
+		type: 'welcome' | 'diff' | 'log' | 'manual-compare' | 'snippet' | 'excel';
 		title: string;
 		file?: GitChangeItem;
 		isStaged?: boolean;
 		task?: DutyTask;
 		comparisonId?: string;
 		snippetId?: string;
+		excelSheetId?: string;
 	};
 
 	let openTabs = $state<Tab[]>([{ id: 'welcome', type: 'welcome', title: 'Welcome' }]);
 	let activeTabId = $state<string>('welcome');
+
+	// ── Browser Excel & Query Table State ────────────────────────────────
+	let excelSheets = $state<ExcelSheet[]>([]);
+	let excelSearchQuery = $state('');
+
+	onMount(() => {
+		excelSheets = getInitialSheets();
+	});
+
+	const saveExcelSheet = (updatedSheet: ExcelSheet) => {
+		const idx = excelSheets.findIndex((s) => s.id === updatedSheet.id);
+		if (idx !== -1) {
+			excelSheets[idx] = updatedSheet;
+		} else {
+			excelSheets.push(updatedSheet);
+		}
+		excelSheets = [...excelSheets];
+		saveSheetsToStorage(excelSheets);
+	};
+
+	const createNewExcelSheet = () => {
+		const newSheet: ExcelSheet = {
+			id: `sheet-${Date.now()}`,
+			title: `Query Table ${excelSheets.length + 1}`,
+			headers: ['id', 'username', 'email', 'status'],
+			rows: [
+				['1', 'user_alpha', 'alpha@ohmycode.dev', 'Active'],
+				['2', 'user_beta', 'beta@ohmycode.dev', 'Pending']
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now()
+		};
+		saveExcelSheet(newSheet);
+		openExcelTab(newSheet);
+	};
+
+	const deleteExcelSheet = (id: string) => {
+		excelSheets = excelSheets.filter((s) => s.id !== id);
+		saveSheetsToStorage(excelSheets);
+		closeTab(new MouseEvent('click'), `excel-${id}`);
+	};
+
+	const openExcelTab = (sheet: ExcelSheet) => {
+		openTab({
+			id: `excel-${sheet.id}`,
+			type: 'excel',
+			title: sheet.title || 'Excel Sheet',
+			excelSheetId: sheet.id
+		});
+	};
+
+	const filteredExcelSheets = $derived(
+		excelSheets.filter(
+			(s) =>
+				!excelSearchQuery ||
+				s.title.toLowerCase().includes(excelSearchQuery.toLowerCase()) ||
+				s.headers.some((h) => h.toLowerCase().includes(excelSearchQuery.toLowerCase()))
+		)
+	);
 
 	const openTab = (tab: Tab) => {
 		if (!openTabs.some((t) => t.id === tab.id)) {
@@ -2210,6 +2276,48 @@
 					</svg>
 				</button>
 
+				<!-- Browser Excel & Query Sheet Button -->
+				<button
+					onclick={() => {
+						activeSidebar = 'excel';
+						isSidebarCollapsed = false;
+						if (excelSheets.length > 0) {
+							openExcelTab(excelSheets[0]);
+						} else {
+							createNewExcelSheet();
+						}
+					}}
+					class="group relative rounded-lg p-2.5 text-base-content/50 transition-colors hover:text-base-content {activeSidebar ===
+						'excel' && !isSidebarCollapsed
+						? 'bg-base-content/5 text-emerald-500'
+						: ''}"
+					title="Browser Excel & Query Sheet"
+				>
+					<div
+						class="absolute top-1/2 left-0 h-6 w-0.75 -translate-y-1/2 scale-y-0 rounded-r bg-emerald-500 transition-all group-hover:scale-y-75 {activeSidebar ===
+							'excel' && !isSidebarCollapsed
+							? 'scale-y-100'
+							: ''}"
+					></div>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<rect width="18" height="18" x="3" y="3" rx="2"></rect>
+						<path d="M3 9h18"></path>
+						<path d="M3 15h18"></path>
+						<path d="M9 3v18"></path>
+						<path d="M15 3v18"></path>
+					</svg>
+				</button>
+
 				<!-- Direct Preferences View -->
 				<button
 					onclick={() => {
@@ -3147,6 +3255,84 @@
 								{/if}
 							</div>
 						</div>
+					{:else if activeSidebar === 'excel'}
+						<div class="flex h-full flex-col gap-3 p-3 text-left select-none">
+							<!-- Search excel sheets bar -->
+							<div class="form-control shrink-0">
+								<input
+									type="text"
+									bind:value={excelSearchQuery}
+									placeholder="Search excel sheets..."
+									class="input input-sm h-8 w-full rounded-lg border-base-content/10 bg-base-100 text-[11px] leading-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+								/>
+							</div>
+
+							<!-- New sheet button -->
+							<button
+								onclick={createNewExcelSheet}
+								class="btn w-full gap-1.5 rounded-lg text-xs font-bold tracking-wider uppercase btn-sm bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow-sm"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="13"
+									height="13"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+								>
+									<line x1="12" y1="5" x2="12" y2="19"></line>
+									<line x1="5" y1="12" x2="19" y2="12"></line>
+								</svg>
+								New Excel Sheet
+							</button>
+
+							<!-- List of excel sheets -->
+							<div class="vscode-scrollbar flex flex-1 flex-col gap-1.5 overflow-y-auto">
+								{#if excelSheets.length === 0}
+									<div class="py-12 text-center text-xs opacity-40">No excel sheets stored</div>
+								{:else}
+									{#each filteredExcelSheets as sheet (sheet.id)}
+										<div
+											role="button"
+											tabindex="0"
+											onclick={() => openExcelTab(sheet)}
+											onkeydown={(e) => e.key === 'Enter' && openExcelTab(sheet)}
+											class="group flex cursor-pointer flex-col gap-1 rounded-xl border bg-base-100 p-2.5 text-left transition-all hover:border-emerald-500/40 hover:bg-base-300 {activeTabId ===
+											`excel-${sheet.id}`
+												? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold'
+												: 'border-base-content/10'}"
+										>
+											<div class="flex items-center justify-between">
+												<span
+													class="badge max-w-30 truncate rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 font-mono badge-xs text-[8px] font-bold tracking-wide text-emerald-600 dark:text-emerald-400 uppercase"
+												>
+													{sheet.rows.length} Rows • {sheet.headers.length} Cols
+												</span>
+												<button
+													onclick={(e) => {
+														e.stopPropagation();
+														deleteExcelSheet(sheet.id);
+													}}
+													class="btn btn-square text-error/60 opacity-0 btn-ghost btn-xs group-hover:opacity-100 hover:bg-error/10 hover:text-error"
+													title="Delete sheet"
+												>
+													✕
+												</button>
+											</div>
+											<p
+												class="truncate text-xs leading-snug font-bold text-base-content/90 transition-colors group-hover:text-emerald-500"
+											>
+												📊 {sheet.title || 'Untitled Sheet'}
+											</p>
+											<p class="max-w-full truncate font-mono text-[9px] opacity-50">
+												Headers: {sheet.headers.slice(0, 3).join(', ')}{sheet.headers.length > 3 ? '...' : ''}
+											</p>
+										</div>
+									{/each}
+								{/if}
+							</div>
+						</div>
 					{/if}
 				</div>
 			</section>
@@ -3246,6 +3432,23 @@
 								>
 									<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
 									<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+								</svg>
+							{:else if tab.type === 'excel'}
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+									class="shrink-0 text-emerald-500"
+								>
+									<rect width="18" height="18" x="3" y="3" rx="2"></rect>
+									<path d="M3 9h18"></path>
+									<path d="M3 15h18"></path>
+									<path d="M9 3v18"></path>
+									<path d="M15 3v18"></path>
 								</svg>
 							{:else}
 								<svg
@@ -3398,6 +3601,35 @@
 											></polyline></svg
 										>
 										Search Log History
+									</button>
+									<button
+										onclick={() => {
+											activeSidebar = 'excel';
+											isSidebarCollapsed = false;
+											if (excelSheets.length > 0) {
+												openExcelTab(excelSheets[0]);
+											} else {
+												createNewExcelSheet();
+											}
+										}}
+										class="btn justify-start gap-2 rounded-xl border-emerald-500/20 bg-emerald-500/10 text-xs font-bold text-emerald-600 dark:text-emerald-400 btn-sm hover:bg-emerald-500/20"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="13"
+											height="13"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2.5"
+										>
+											<rect width="18" height="18" x="3" y="3" rx="2"></rect>
+											<path d="M3 9h18"></path>
+											<path d="M3 15h18"></path>
+											<path d="M9 3v18"></path>
+											<path d="M15 3v18"></path>
+										</svg>
+										Browser Excel & Query Sheet
 									</button>
 								</div>
 							</div>
@@ -4773,6 +5005,17 @@
 									</div>
 								</div>
 							</div>
+						{/if}
+					{/if}
+				{:else if activeTabId.startsWith('excel-')}
+					{@const tab = openTabs.find((t) => t.id === activeTabId)}
+					{#if tab && tab.excelSheetId}
+						{@const shIdx = excelSheets.findIndex((s) => s.id === tab.excelSheetId)}
+						{#if shIdx !== -1}
+							<ExcelGrid
+								bind:sheet={excelSheets[shIdx]}
+								onSave={(updated: ExcelSheet) => saveExcelSheet(updated)}
+							/>
 						{/if}
 					{/if}
 				{:else}
